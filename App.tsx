@@ -1,20 +1,257 @@
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import {
+  useFonts,
+  Urbanist_300Light,
+  Urbanist_400Regular,
+  Urbanist_500Medium,
+  Urbanist_600SemiBold,
+  Urbanist_700Bold,
+} from '@expo-google-fonts/urbanist';
+import {
+  Doto_400Regular,
+  Doto_600SemiBold,
+  Doto_700Bold,
+} from '@expo-google-fonts/doto';
+
+WebBrowser.maybeCompleteAuthSession();
+
+import { useAuthStore } from './src/store/useAuthStore';
+import { useSystemStore } from './src/store/useSystemStore';
+import { useEnergyStore } from './src/store/useEnergyStore';
+import { useTaskStore } from './src/store/useTaskStore';
+import { useTheme } from './src/theme/useTheme';
+import { STORAGE_KEYS, storage } from './src/utils/storage';
+import { NavTab } from './src/navigation/CadenceTabBar';
+
+// Screens
+import { ConnectScreen } from './src/screens/ConnectScreen';
+import { TodayScreen } from './src/screens/TodayScreen';
+import { TasksScreen } from './src/screens/TasksScreen';
+import { NewTaskScreen } from './src/screens/NewTaskScreen';
+import { ReplanScreen } from './src/screens/ReplanScreen';
+import { EnergyStatusScreen } from './src/screens/EnergyStatusScreen';
+import { CircadianRhythmScreen } from './src/screens/CircadianRhythmScreen';
+
+// AI Trigger Modal
+import { AskCadenceModal } from './src/components/ai/AskCadenceModal';
 
 export default function App() {
+  const { theme, isDark } = useTheme();
+  const { initialize: initializeAuth } = useAuthStore();
+  const { hydrate: hydrateSystem, setCurrentRouteName } = useSystemStore();
+  const { hydrate: hydrateEnergy } = useEnergyStore();
+  const { hydrate: hydrateTasks } = useTaskStore();
+
+  const [fontsLoaded] = useFonts({
+    Urbanist_300Light,
+    Urbanist_400Regular,
+    Urbanist_500Medium,
+    Urbanist_600SemiBold,
+    Urbanist_700Bold,
+    Doto_400Regular,
+    Doto_600SemiBold,
+    Doto_700Bold,
+  });
+
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean | null>(null);
+  const [currentTab, setCurrentTab] = useState<NavTab>('Today');
+  const [showCircadianDetail, setShowCircadianDetail] = useState(false);
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const [showReplanModal, setShowReplanModal] = useState(false);
+  const [replanReason, setReplanReason] = useState<string | undefined>(undefined);
+  const [showAiModal, setShowAiModal] = useState(false);
+
+  useEffect(() => {
+    // Hydrate persistent stores
+    hydrateSystem();
+    hydrateEnergy();
+    hydrateTasks();
+
+    // Check onboarding completion
+    storage.get<boolean>(STORAGE_KEYS.hasCompletedOnboarding).then((completed) => {
+      setHasCompletedOnboarding(!!completed);
+    });
+
+    let unsubscribe: (() => void) | undefined;
+    initializeAuth().then((cleanup) => {
+      unsubscribe = cleanup;
+    }).catch(() => {});
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [initializeAuth, hydrateSystem, hydrateEnergy, hydrateTasks]);
+
+  useEffect(() => {
+    if (hasCompletedOnboarding) {
+      if (showNewTaskModal) setCurrentRouteName('NewTask');
+      else if (showReplanModal) setCurrentRouteName('Replan');
+      else if (currentTab === 'Energy' && showCircadianDetail) setCurrentRouteName('CircadianRhythm');
+      else setCurrentRouteName(currentTab);
+    } else {
+      setCurrentRouteName('Connect');
+    }
+  }, [
+    hasCompletedOnboarding,
+    currentTab,
+    showCircadianDetail,
+    showNewTaskModal,
+    showReplanModal,
+    setCurrentRouteName,
+  ]);
+
+  const handleFinishOnboarding = () => {
+    storage.set(STORAGE_KEYS.hasCompletedOnboarding, true);
+    setHasCompletedOnboarding(true);
+  };
+
+  const handleResetOnboarding = () => {
+    storage.set(STORAGE_KEYS.hasCompletedOnboarding, false);
+    setHasCompletedOnboarding(false);
+    setCurrentTab('Today');
+    setShowCircadianDetail(false);
+    setShowNewTaskModal(false);
+    setShowReplanModal(false);
+  };
+
+  const handleTabChange = (tab: NavTab) => {
+    if (tab !== 'Energy') {
+      setShowCircadianDetail(false);
+    }
+    setCurrentTab(tab);
+  };
+
+  if (!fontsLoaded || hasCompletedOnboarding === null) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primaryOlive} />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <GestureHandlerRootView style={[styles.rootContainer, { backgroundColor: theme.background }]}>
+      <BottomSheetModalProvider>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+
+        {!hasCompletedOnboarding ? (
+          <ConnectScreen onComplete={handleFinishOnboarding} />
+        ) : (
+          <View style={styles.appContainer}>
+            {/* Screen 2: Today Dashboard */}
+            {currentTab === 'Today' && (
+              <TodayScreen
+                onNavigateTab={handleTabChange}
+                onAddTask={() => setShowNewTaskModal(true)}
+                onReplan={() => setShowReplanModal(true)}
+                onViewTasks={() => handleTabChange('Tasks')}
+                onResetOnboarding={handleResetOnboarding}
+                onLongPressAi={() => setShowAiModal(true)}
+              />
+            )}
+
+            {/* Screen 6: Tasks & Backlog */}
+            {currentTab === 'Tasks' && (
+              <TasksScreen
+                onAddTask={() => setShowNewTaskModal(true)}
+                onNavigateTab={handleTabChange}
+                onLongPressAi={() => setShowAiModal(true)}
+              />
+            )}
+
+            {/* Screen 5: Energy Status */}
+            {currentTab === 'Energy' && !showCircadianDetail && (
+              <EnergyStatusScreen
+                onOpenCircadianRhythm={() => setShowCircadianDetail(true)}
+                onNavigateTab={handleTabChange}
+                onLongPressAi={() => setShowAiModal(true)}
+              />
+            )}
+
+            {/* Screen 7: Circadian Rhythm Detail */}
+            {currentTab === 'Energy' && showCircadianDetail && (
+              <CircadianRhythmScreen
+                onBack={() => setShowCircadianDetail(false)}
+                onNavigateTab={handleTabChange}
+                onLongPressAi={() => setShowAiModal(true)}
+              />
+            )}
+
+            {/* Profile Tab Fallback */}
+            {currentTab === 'Profile' && (
+              <TodayScreen
+                onNavigateTab={handleTabChange}
+                onAddTask={() => setShowNewTaskModal(true)}
+                onReplan={() => setShowReplanModal(true)}
+                onViewTasks={() => handleTabChange('Tasks')}
+                onResetOnboarding={handleResetOnboarding}
+                onLongPressAi={() => setShowAiModal(true)}
+              />
+            )}
+
+            {/* Screen 3: New Task Modal */}
+            {showNewTaskModal && (
+              <View style={StyleSheet.absoluteFill}>
+                <NewTaskScreen
+                  onClose={() => setShowNewTaskModal(false)}
+                  onScheduled={() => {
+                    setShowNewTaskModal(false);
+                  }}
+                />
+              </View>
+            )}
+
+            {/* Screen 4: AI Replan Modal */}
+            {showReplanModal && (
+              <View style={StyleSheet.absoluteFill}>
+                <ReplanScreen
+                  slipReason={replanReason || 'Design review ran 30 min over'}
+                  onClose={() => {
+                    setShowReplanModal(false);
+                    setReplanReason(undefined);
+                  }}
+                  onApplyReplan={() => {
+                    setShowReplanModal(false);
+                    setReplanReason(undefined);
+                  }}
+                />
+              </View>
+            )}
+
+            {/* Ask Cadence AI Bottom Sheet Modal */}
+            <AskCadenceModal
+              visible={showAiModal}
+              onClose={() => setShowAiModal(false)}
+              onReplanRequested={(reason) => {
+                setReplanReason(reason);
+                setShowReplanModal(true);
+              }}
+            />
+          </View>
+        )}
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  rootContainer: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  appContainer: {
+    flex: 1,
   },
 });
