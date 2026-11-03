@@ -23,28 +23,37 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
- * Custom storage adapter for Supabase to persist PKCE state & session securely across app switches
+ * Custom dual-storage adapter for Supabase to persist PKCE state & session securely across app switches
+ * Writes to both SecureStore and AsyncStorage to guarantee persistence even if OS clears memory.
  */
 export const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
     try {
-      return await SecureStore.getItemAsync(key);
+      const val = await SecureStore.getItemAsync(key);
+      if (val !== null) return val;
+      return await AsyncStorage.getItem(key);
     } catch {
       return await AsyncStorage.getItem(key);
     }
   },
   setItem: async (key: string, value: string): Promise<void> => {
     try {
-      await SecureStore.setItemAsync(key, value);
+      await Promise.all([
+        SecureStore.setItemAsync(key, value).catch(() => {}),
+        AsyncStorage.setItem(key, value).catch(() => {}),
+      ]);
     } catch {
-      await AsyncStorage.setItem(key, value);
+      await AsyncStorage.setItem(key, value).catch(() => {});
     }
   },
   removeItem: async (key: string): Promise<void> => {
     try {
-      await SecureStore.deleteItemAsync(key);
+      await Promise.all([
+        SecureStore.deleteItemAsync(key).catch(() => {}),
+        AsyncStorage.removeItem(key).catch(() => {}),
+      ]);
     } catch {
-      await AsyncStorage.removeItem(key);
+      await AsyncStorage.removeItem(key).catch(() => {});
     }
   },
 };

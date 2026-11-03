@@ -182,92 +182,126 @@ export const ensureUserSeeded = async (user: User | null): Promise<void> => {
   }
 };
 
+// Track processed auth URLs to prevent race conditions and duplicate exchanges
+const processedAuthUrls = new Set<string>();
+let isHandlingAuth = false;
+
 /**
  * Handles incoming authentication URLs (from WebBrowser callback, deep link event, or initial URL)
  */
 const handleAuthUrl = async (url: string, set: any): Promise<boolean> => {
   if (!url) return false;
+  if (processedAuthUrls.has(url)) {
+    console.log('[Auth] Duplicate incoming auth URL detected and skipped:', url);
+    return true;
+  }
+  processedAuthUrls.add(url);
+  if (processedAuthUrls.size > 25) {
+    const first = processedAuthUrls.values().next().value;
+    if (first) processedAuthUrls.delete(first);
+  }
+
+  isHandlingAuth = true;
   console.log('[Auth] Processing incoming Auth URL:', url);
 
-  const params = extractParamsFromUrl(url);
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token');
-  const code = params.get('code');
-  const errorDescription = params.get('error_description') || params.get('error');
+  try {
+    const params = extractParamsFromUrl(url);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const code = params.get('code');
+    const rawError = params.get('error_description') || params.get('error');
 
-  if (errorDescription) {
-    console.error('[Auth] Deep link error:', errorDescription);
-    set({ error: errorDescription, isLoading: false });
+    if (rawError) {
+      const readableError = decodeURIComponent(rawError).replace(/\+/g, ' ');
+      console.warn('[Auth] Auth callback returned note:', readableError);
+
+      let userFacingError = readableError;
+      if (
+        readableError.toLowerCase().includes('state not found') ||
+        readableError.toLowerCase().includes('expired')
+      ) {
+        userFacingError =
+          'Google authentication state expired or was already completed. Please tap sign-in again, or use Demo Account.';
+      }
+
+      set({ error: userFacingError, isLoading: false });
+      return false;
+    }
+
+    if (accessToken && refreshToken) {
+      console.log('[Auth] Setting session from access/refresh tokens...');
+      const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (sessionError) {
+        console.warn('[Auth] SetSession error:', sessionError.message);
+        set({ error: sessionError.message, isLoading: false });
+        return false;
+      }
+
+      if (sessionData.session) {
+        console.log('[Auth] Session established successfully for user:', sessionData.user?.id);
+        await syncSessionToStorage(sessionData.session);
+        await ensureUserSeeded(sessionData.user);
+        set({
+          status: 'authenticated',
+          session: sessionData.session,
+          user: sessionData.user,
+          profile: sessionData.user
+            ? {
+                id: sessionData.user.id,
+                email: sessionData.user.email,
+                ...sessionData.user.user_metadata,
+              }
+            : null,
+          isLoading: false,
+          error: null,
+        });
+        return true;
+      }
+    } else if (code) {
+      console.log('[Auth] Exchanging code for session via PKCE...');
+      const { data: sessionData, error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code);
+
+      if (exchangeError) {
+        console.warn('[Auth] Code exchange error:', exchangeError.message);
+        set({ error: exchangeError.message, isLoading: false });
+        return false;
+      }
+
+      if (sessionData.session) {
+        console.log('[Auth] Session established via PKCE for user:', sessionData.user?.id);
+        await syncSessionToStorage(sessionData.session);
+        await ensureUserSeeded(sessionData.user);
+        set({
+          status: 'authenticated',
+          session: sessionData.session,
+          user: sessionData.user,
+          profile: sessionData.user
+            ? {
+                id: sessionData.user.id,
+                email: sessionData.user.email,
+                ...sessionData.user.user_metadata,
+              }
+            : null,
+          isLoading: false,
+          error: null,
+        });
+        return true;
+      }
+    }
+
     return false;
+  } catch (err: any) {
+    console.warn('[Auth] Exception parsing auth URL:', err?.message || err);
+    set({ isLoading: false });
+    return false;
+  } finally {
+    isHandlingAuth = false;
   }
-
-  if (accessToken && refreshToken) {
-    console.log('[Auth] Setting session from access/refresh tokens...');
-    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-
-    if (sessionError) {
-      console.error('[Auth] SetSession failed:', sessionError);
-      set({ error: sessionError.message, isLoading: false });
-      return false;
-    }
-
-    if (sessionData.session) {
-      console.log('[Auth] Session established successfully for user:', sessionData.user?.id);
-      await syncSessionToStorage(sessionData.session);
-      await ensureUserSeeded(sessionData.user);
-      set({
-        status: 'authenticated',
-        session: sessionData.session,
-        user: sessionData.user,
-        profile: sessionData.user
-          ? {
-              id: sessionData.user.id,
-              email: sessionData.user.email,
-              ...sessionData.user.user_metadata,
-            }
-          : null,
-        isLoading: false,
-        error: null,
-      });
-      return true;
-    }
-  } else if (code) {
-    console.log('[Auth] Exchanging code for session...');
-    const { data: sessionData, error: exchangeError } =
-      await supabase.auth.exchangeCodeForSession(code);
-
-    if (exchangeError) {
-      console.error('[Auth] Code exchange failed:', exchangeError);
-      set({ error: exchangeError.message, isLoading: false });
-      return false;
-    }
-
-    if (sessionData.session) {
-      console.log('[Auth] Session established via PKCE for user:', sessionData.user?.id);
-      await syncSessionToStorage(sessionData.session);
-      await ensureUserSeeded(sessionData.user);
-      set({
-        status: 'authenticated',
-        session: sessionData.session,
-        user: sessionData.user,
-        profile: sessionData.user
-          ? {
-              id: sessionData.user.id,
-              email: sessionData.user.email,
-              ...sessionData.user.user_metadata,
-            }
-          : null,
-        isLoading: false,
-        error: null,
-      });
-      return true;
-    }
-  }
-
-  return false;
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
