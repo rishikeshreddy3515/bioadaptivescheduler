@@ -14,6 +14,7 @@ import { FONTS } from '../theme/typography';
 import { DotMatrixBackground } from '../components/common/DotMatrixBackground';
 import { STORAGE_KEYS, storage } from '../utils/storage';
 import { syncService, ConnectedSourcesConfig } from '../services/syncService';
+import { RhythmSetupModal } from '../components/energy/RhythmSetupModal';
 
 interface ConnectionItem {
   id: string;
@@ -31,6 +32,7 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({ onComplete }) => {
   const { theme, isDark, toggleTheme } = useTheme();
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showRhythmModal, setShowRhythmModal] = useState(false);
   const [connections, setConnections] = useState<ConnectionItem[]>([
     {
       id: 'health',
@@ -87,7 +89,7 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({ onComplete }) => {
     });
   };
 
-  const handleBuildCurve = async () => {
+  const finalizeOnboarding = async () => {
     setIsSyncing(true);
     try {
       await syncService.syncAll();
@@ -98,6 +100,11 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({ onComplete }) => {
       setIsSyncing(false);
       onComplete?.();
     }
+  };
+
+  const handleBuildCurve = () => {
+    // Prompt the user with LifeStack's chronotype & sleeping habits questionnaire
+    setShowRhythmModal(true);
   };
 
   return (
@@ -231,6 +238,19 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({ onComplete }) => {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* LifeStack Sleeping Habits & Chronotype Questionnaire */}
+        <RhythmSetupModal
+          visible={showRhythmModal}
+          onClose={() => {
+            setShowRhythmModal(false);
+            finalizeOnboarding();
+          }}
+          onSaved={() => {
+            setShowRhythmModal(false);
+            finalizeOnboarding();
+          }}
+        />
       </SafeAreaView>
     </View>
   );

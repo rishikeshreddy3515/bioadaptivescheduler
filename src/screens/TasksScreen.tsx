@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,11 +7,13 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { useTheme } from '../theme/useTheme';
 import { FONTS } from '../theme/typography';
 import { CadenceActivity, ACTIVITY_COLORS } from '../theme/colors';
 import { DotMatrixBackground } from '../components/common/DotMatrixBackground';
+import { TaskCoverFlow3D, CoverFlowTaskItem } from '../components/tasks/TaskCoverFlow3D';
 import { useTaskStore } from '../store/useTaskStore';
 import { CadenceTabBar, NavTab } from '../navigation/CadenceTabBar';
 
@@ -55,6 +57,77 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
   const creativeCount = tasks.filter((t) => (t.taskCategory || t.category) === 'creative_work').length || 1;
   const adminCount = tasks.filter((t) => (t.taskCategory || t.category) === 'administration').length || 1;
   const otherCount = tasks.filter((t) => !['deep_work', 'creative_work', 'administration'].includes((t.taskCategory || t.category) as any)).length || 1;
+
+  const [selectedCoverIndex, setSelectedCoverIndex] = useState(0);
+
+  // Map tasks to 3D Glassmorphic Cover Flow items for interactive viewing
+  const coverFlowItems: CoverFlowTaskItem[] = useMemo(() => {
+    if (tasks.length === 0) {
+      return [
+        {
+          id: 'demo-spec',
+          title: 'Write product spec',
+          category: 'deep_work',
+          durationMinutes: 45,
+          bestTime: '09:10',
+          windowLabel: 'Inside Peak',
+          isEmerald: true,
+          userCount: 3,
+          tabLabel: 'Spec',
+        },
+        {
+          id: 'demo-lic',
+          title: 'Licensing & Contracts',
+          category: 'administration',
+          durationMinutes: 30,
+          bestTime: '13:30',
+          windowLabel: 'Admin Slump',
+          userCount: 2,
+          tabLabel: 'Contracts',
+        },
+        {
+          id: 'demo-design',
+          title: 'Design Review',
+          category: 'creative_work',
+          durationMinutes: 45,
+          bestTime: '16:00',
+          windowLabel: 'Second Wind',
+          userCount: 4,
+          tabLabel: 'Design',
+        },
+        {
+          id: 'demo-sales',
+          title: 'Sales Strategy',
+          category: 'administration',
+          durationMinutes: 45,
+          bestTime: '17:00',
+          windowLabel: 'Day Wrap',
+          userCount: 3,
+          tabLabel: 'Sales',
+        },
+      ];
+    }
+
+    return tasks.map((t, idx) => {
+      const timePart = t.scheduledStartTime?.includes('T')
+        ? t.scheduledStartTime.split('T')[1].substring(0, 5)
+        : '09:00';
+      const cat = (t.taskCategory || t.category || 'deep_work') as CadenceActivity;
+      const isPeak = cat === 'deep_work' || cat === 'creative_work';
+
+      return {
+        id: t.id,
+        title: t.title,
+        category: cat,
+        durationMinutes: t.durationMinutes || t.estimatedDurationMinutes || 45,
+        bestTime: timePart,
+        windowLabel: isPeak ? 'Inside Peak' : 'Scheduled',
+        isEmerald: cat === 'deep_work' || idx === 0,
+        userCount: idx + 1,
+        tabLabel: t.title.length > 10 ? t.title.substring(0, 8) + '...' : t.title,
+      };
+    });
+  }, [tasks]);
 
   // Filter tasks
   const filteredTasks = tasks.filter((t) => {
@@ -168,6 +241,30 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
                 ]}
               />
             </View>
+          </View>
+
+          {/* 3D Glassmorphic Task Deck (Cover Flow for Viewing Tasks) */}
+          <View style={styles.carouselSection}>
+            <View style={styles.carouselHeaderRow}>
+              <Text style={[styles.sectionSubtitle, { color: theme.secondaryText, fontFamily: FONTS.urbanistSemiBold }]}>
+                3D TASK DECK
+              </Text>
+              <Text style={[styles.cardCounter, { color: theme.primaryOlive, fontFamily: FONTS.dotoBold }]}>
+                {coverFlowItems.length > 0 ? `${selectedCoverIndex + 1} / ${coverFlowItems.length}` : '0 / 0'}
+              </Text>
+            </View>
+
+            <TaskCoverFlow3D
+              tasks={coverFlowItems}
+              selectedIndex={selectedCoverIndex}
+              onSelectIndex={setSelectedCoverIndex}
+              activeActivity={coverFlowItems[selectedCoverIndex]?.category || 'deep_work'}
+              activeDuration={coverFlowItems[selectedCoverIndex]?.durationMinutes || 45}
+              taskTitle={coverFlowItems[selectedCoverIndex]?.title || ''}
+              bestTime={coverFlowItems[selectedCoverIndex]?.bestTime}
+              windowLabel={coverFlowItems[selectedCoverIndex]?.windowLabel}
+              showFloatingCorporateBadge={false}
+            />
           </View>
 
           {/* Activity Category Filter Pills */}
@@ -303,6 +400,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 8 : 0,
   },
   topHeaderRow: {
     flexDirection: 'row',
@@ -392,6 +490,24 @@ const styles = StyleSheet.create({
   progressBarSegment: {
     height: '100%',
     borderRadius: 2,
+  },
+  carouselSection: {
+    marginBottom: 24,
+  },
+  carouselHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  cardCounter: {
+    fontSize: 13,
   },
   filtersScrollRow: {
     gap: 8,

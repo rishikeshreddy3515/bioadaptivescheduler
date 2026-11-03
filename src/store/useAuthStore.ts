@@ -166,6 +166,12 @@ export const ensureUserSeeded = async (user: User | null): Promise<void> => {
     } catch (bioErr: any) {
       console.log('[Auth] Biometrics seed note:', bioErr?.message);
     }
+    // 4. Hydrate user-specific energy routine for this account
+    try {
+      const { useEnergyStore } = require('./useEnergyStore');
+      await useEnergyStore.getState().fetchRoutine(user.id);
+      await useEnergyStore.getState().fetchCircadianData();
+    } catch {}
   } catch (seedErr) {
     console.log('[Auth] User seed non-blocking warning:', seedErr);
   }

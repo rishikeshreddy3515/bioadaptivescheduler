@@ -14,9 +14,29 @@ interface RhythmRulerProps {
   currentHour?: number; // e.g. 9.25 = 09:15
 }
 
-export const RhythmRuler: React.FC<RhythmRulerProps> = ({ currentHour = 9.4 }) => {
+export const RhythmRuler: React.FC<RhythmRulerProps> = ({ currentHour: propHour }) => {
   const { theme, isDark } = useTheme();
   const [containerWidth, setContainerWidth] = React.useState(320);
+
+  const [liveHour, setLiveHour] = React.useState(() => {
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60;
+  });
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setLiveHour(d.getHours() + d.getMinutes() / 60);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentHour = propHour !== undefined ? propHour : liveHour;
+  const timeStr = React.useMemo(() => {
+    const h = Math.floor(currentHour);
+    const m = Math.round((currentHour - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }, [currentHour]);
 
   const startHour = 6;
   const endHour = 22;
@@ -124,13 +144,15 @@ export const RhythmRuler: React.FC<RhythmRulerProps> = ({ currentHour = 9.4 }) =
           style={[
             styles.nowBadge,
             {
-              left: Math.max(nowX - 22, 6),
+              left: Math.max(nowX - 38, 6),
+              minWidth: 76,
+              paddingHorizontal: 8,
               backgroundColor: theme.primaryOlive,
             },
           ]}
         >
           <Text style={[styles.nowText, { fontFamily: FONTS.urbanistBold }]}>
-            Now
+            Now · {timeStr}
           </Text>
         </View>
       </View>
@@ -183,15 +205,16 @@ const styles = StyleSheet.create({
   nowBadge: {
     position: 'absolute',
     top: 2,
-    width: 44,
+    minWidth: 74,
     height: 22,
     borderRadius: 11,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
   },
   nowText: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#0A0B0D',
   },

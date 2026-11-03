@@ -402,22 +402,31 @@ export const energyService = {
 
   /**
    * GET /api/v1/routines
+   * Retrieves the user's specific personalized chronotype and routine
    */
-  async fetchRoutine(): Promise<RoutineModel> {
+  async fetchRoutine(userId?: string): Promise<RoutineModel> {
     if (!isSupabaseConfigured()) {
       return DEFAULT_ROUTINE;
     }
 
     try {
-      const { data, error } = await supabase
-        .from('routines')
-        .select('*')
+      const user = (await supabase.auth.getUser()).data?.user;
+      const targetUserId = userId || user?.id;
+
+      let query = supabase.from('routines').select('*');
+      if (targetUserId) {
+        query = query.eq('user_id', targetUserId);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (data && !error) {
         return {
           id: data.id || 'routine-fetched',
+          userId: data.user_id,
           name: data.name || 'Circadian Routine',
           wakeTime: data.wake_time || '06:30',
           sleepTime: data.sleep_time || '22:30',
@@ -437,6 +446,57 @@ export const energyService = {
     }
 
     return DEFAULT_ROUTINE;
+  },
+
+  /**
+   * POST /api/v1/routines
+   * Saves or updates the user's personalized chronotype and sleep routine in Supabase
+   */
+  async saveRoutine(routine: RoutineModel, userId?: string): Promise<RoutineModel> {
+    if (!isSupabaseConfigured()) {
+      return routine;
+    }
+
+    try {
+      const user = (await supabase.auth.getUser()).data?.user;
+      const targetUserId = userId || user?.id;
+
+      if (targetUserId) {
+        const payload = {
+          user_id: targetUserId,
+          name: routine.name || 'Personalized Circadian Routine',
+          wake_time: routine.wakeTime,
+          sleep_time: routine.sleepTime,
+          target_sleep_hours: routine.targetSleepHours || 8,
+          morning_routine_minutes: routine.morningRoutineMinutes || 45,
+          evening_wind_down_minutes: routine.eveningWindDownMinutes || 60,
+          chronotype: routine.chronotype || 'MODERATE',
+          caffeine_cutoff_hours_before_sleep: routine.caffeineCutoffHoursBeforeSleep || 9,
+          caffeine_cutoff: routine.caffeineCutoff || '14:00',
+          wind_down_time: routine.windDownTime || '21:30',
+          second_wind_start: routine.secondWindStart || '16:30',
+          second_wind_end: routine.secondWindEnd || '18:00',
+        };
+
+        const { data, error } = await supabase
+          .from('routines')
+          .upsert(payload, { onConflict: 'user_id' })
+          .select()
+          .maybeSingle();
+
+        if (data && !error) {
+          return {
+            ...routine,
+            id: data.id,
+            userId: data.user_id,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to save routine to Supabase:', err);
+    }
+
+    return routine;
   },
 
   /**

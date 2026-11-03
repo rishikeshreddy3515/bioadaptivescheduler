@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
 import {
   Canvas,
@@ -12,18 +12,73 @@ import {
 } from '@shopify/react-native-skia';
 import { useTheme } from '../../theme/useTheme';
 import { FONTS } from '../../theme/typography';
+import { RoutineModel } from '../../types/energy';
 
 interface CircadianWaveProps {
-  currentHour?: number; // default 10.33 (10:20)
+  currentHour?: number; // e.g. 11.3 for 11:18
+  routine?: RoutineModel;
   height?: number; // default 190
 }
 
+function timeToDecimalHour(timeStr: string): number {
+  if (!timeStr) return 6.5;
+  const parts = timeStr.split(':').map(Number);
+  return (parts[0] || 0) + (parts[1] || 0) / 60;
+}
+
+function evalCubicBezier(p0: number, cp1: number, cp2: number, p1: number, t: number): number {
+  const u = 1 - t;
+  return (
+    u * u * u * p0 +
+    3 * u * u * t * cp1 +
+    3 * u * t * t * cp2 +
+    t * t * t * p1
+  );
+}
+
 export const CircadianWave: React.FC<CircadianWaveProps> = ({
-  currentHour = 10.33,
+  currentHour: propCurrentHour,
+  routine,
   height = 190,
 }) => {
   const { theme, isDark } = useTheme();
   const [width, setWidth] = useState(340);
+
+  // Dynamic real-time device clock state
+  const [liveHour, setLiveHour] = useState(() => {
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60;
+  });
+
+  const [liveTimeString, setLiveTimeString] = useState(() => {
+    const d = new Date();
+    const h = String(d.getHours()).padStart(2, '0');
+    const m = String(d.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setLiveHour(d.getHours() + d.getMinutes() / 60);
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      setLiveTimeString(`${h}:${m}`);
+    }, 15000); // refresh every 15s
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const activeHour = propCurrentHour !== undefined ? propCurrentHour : liveHour;
+
+  const displayTime = useMemo(() => {
+    if (propCurrentHour !== undefined) {
+      const h = Math.floor(propCurrentHour);
+      const m = Math.round((propCurrentHour - h) * 60);
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return liveTimeString;
+  }, [propCurrentHour, liveTimeString]);
 
   const startHour = 6;
   const endHour = 22;
@@ -38,27 +93,36 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
     if (w > 0) setWidth(w);
   };
 
-  // Peak window: 08:30 (8.5) to 11:00 (11.0)
-  // Slump window: 13:00 (13.0) to 15:30 (15.5)
-  const peakLeft = getX(8.5);
-  const peakRight = getX(11.0);
-  const slumpLeft = getX(13.0);
-  const slumpRight = getX(15.5);
+  // Dynamic routine-based key anchors
+  const wakeH = timeToDecimalHour(routine?.wakeTime || '06:30');
+  const sleepH = timeToDecimalHour(routine?.sleepTime || '22:30');
+
+  // Peak window: +2.0h to +4.5h after wake
+  const peakStart = wakeH + 2.0;
+  const peakEnd = wakeH + 4.5;
+  const peakLeft = getX(peakStart);
+  const peakRight = getX(peakEnd);
+
+  // Slump window: +6.5h to +9.0h after wake
+  const slumpStart = wakeH + 6.5;
+  const slumpEnd = wakeH + 9.0;
+  const slumpLeft = getX(slumpStart);
+  const slumpRight = getX(slumpEnd);
 
   const axisY = height - 36;
 
-  // Key wave control points:
-  // 06:00 -> Wake baseline
-  // 09:30 -> Morning Peak
-  // 14:00 -> Afternoon Slump
-  // 17:30 -> Second Wind Peak
-  // 21:30 -> Evening Wind-down
+  // Key wave control points based on the user's specific routine
   const { wavePath, fillPath, nowPoint } = useMemo(() => {
-    const p0 = { x: getX(6.0), y: axisY - 26 };
-    const pPeak1 = { x: getX(9.5), y: 32 };
-    const pDip = { x: getX(14.0), y: axisY - 20 };
-    const pPeak2 = { x: getX(17.5), y: 48 };
-    const pEnd = { x: getX(22.0), y: axisY - 14 };
+    const hPeak1 = wakeH + 3.0; // Morning Peak
+    const hDip = wakeH + 7.5;   // Afternoon Slump
+    const hPeak2 = Math.min(20.0, sleepH - 4.5); // Second Wind
+    const hEnd = Math.min(22.0, timeToDecimalHour(routine?.windDownTime || '21:30'));
+
+    const p0 = { x: getX(Math.max(6.0, wakeH - 0.5)), y: axisY - 26 };
+    const pPeak1 = { x: getX(hPeak1), y: 32 };
+    const pDip = { x: getX(hDip), y: axisY - 20 };
+    const pPeak2 = { x: getX(hPeak2), y: 48 };
+    const pEnd = { x: getX(hEnd), y: axisY - 14 };
 
     // Segment 1: p0 to pPeak1 (Rise to morning peak)
     const cp1a = { x: p0.x + (pPeak1.x - p0.x) * 0.45, y: p0.y };
@@ -83,20 +147,30 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
     const p = Skia.Path.MakeFromSVGString(waveSvg) || Skia.Path.Make();
     const fill = Skia.Path.MakeFromSVGString(fillSvg) || Skia.Path.Make();
 
-    // Estimate Now Y coordinate along curve (for hour ~10.33)
-    const t = Math.max(0, Math.min(1, (currentHour - 9.5) / (14.0 - 9.5)));
-    const nowY =
-      Math.pow(1 - t, 3) * pPeak1.y +
-      3 * Math.pow(1 - t, 2) * t * cp2a.y +
-      3 * (1 - t) * Math.pow(t, 2) * cp2b.y +
-      Math.pow(t, 3) * pDip.y;
+    // Exact Bezier evaluation of Now Y coordinate across the 4 segments
+    const clampedH = Math.max(6.0, Math.min(22.0, activeHour));
+    let nowY = axisY - 20;
+
+    if (clampedH <= hPeak1) {
+      const t = Math.max(0, Math.min(1, (clampedH - 6.0) / Math.max(0.1, hPeak1 - 6.0)));
+      nowY = evalCubicBezier(p0.y, cp1a.y, cp1b.y, pPeak1.y, t);
+    } else if (clampedH <= hDip) {
+      const t = Math.max(0, Math.min(1, (clampedH - hPeak1) / Math.max(0.1, hDip - hPeak1)));
+      nowY = evalCubicBezier(pPeak1.y, cp2a.y, cp2b.y, pDip.y, t);
+    } else if (clampedH <= hPeak2) {
+      const t = Math.max(0, Math.min(1, (clampedH - hDip) / Math.max(0.1, hPeak2 - hDip)));
+      nowY = evalCubicBezier(pDip.y, cp3a.y, cp3b.y, pPeak2.y, t);
+    } else {
+      const t = Math.max(0, Math.min(1, (clampedH - hPeak2) / Math.max(0.1, hEnd - hPeak2)));
+      nowY = evalCubicBezier(pPeak2.y, cp4a.y, cp4b.y, pEnd.y, t);
+    }
 
     return {
       wavePath: p,
       fillPath: fill,
-      nowPoint: { x: getX(currentHour), y: nowY },
+      nowPoint: { x: getX(clampedH), y: nowY },
     };
-  }, [width, usableW, pad, axisY, currentHour]);
+  }, [width, usableW, pad, axisY, activeHour, wakeH, sleepH, routine]);
 
   // Compute ruler ticks
   const ticks = useMemo(() => {
@@ -125,22 +199,22 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
   return (
     <View style={[styles.container, { height }]} onLayout={onLayout}>
       <Canvas style={StyleSheet.absoluteFill}>
-        {/* Shaded Column 1: Peak window (08:30 - 11:00) */}
+        {/* Shaded Column 1: Peak window */}
         <Rect
           x={peakLeft}
           y={18}
-          width={peakRight - peakLeft}
+          width={Math.max(4, peakRight - peakLeft)}
           height={axisY - 18}
-          color={isDark ? 'rgba(42, 212, 240, 0.12)' : 'rgba(54, 126, 135, 0.12)'}
+          color={isDark ? 'rgba(42, 212, 240, 0.14)' : 'rgba(54, 126, 135, 0.14)'}
         />
 
-        {/* Shaded Column 2: Slump window (13:00 - 15:30) */}
+        {/* Shaded Column 2: Slump window */}
         <Rect
           x={slumpLeft}
           y={18}
-          width={slumpRight - slumpLeft}
+          width={Math.max(4, slumpRight - slumpLeft)}
           height={axisY - 18}
-          color={isDark ? 'rgba(255, 197, 49, 0.10)' : 'rgba(200, 138, 43, 0.10)'}
+          color={isDark ? 'rgba(255, 197, 49, 0.12)' : 'rgba(200, 138, 43, 0.12)'}
         />
 
         {/* Wave Underfill Gradient */}
@@ -149,7 +223,7 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
             start={vec(0, 30)}
             end={vec(0, axisY)}
             colors={[
-              isDark ? 'rgba(42, 212, 240, 0.22)' : 'rgba(54, 126, 135, 0.18)',
+              isDark ? 'rgba(42, 212, 240, 0.24)' : 'rgba(54, 126, 135, 0.18)',
               'transparent',
             ]}
           />
@@ -206,18 +280,18 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
         />
       </Canvas>
 
-      {/* Floating 'Now' Badge */}
+      {/* Floating 'Now' Badge with Live Device Time */}
       <View
         style={[
           styles.nowBadge,
           {
-            left: Math.max(nowPoint.x - 22, 6),
+            left: Math.max(pad, Math.min(width - pad - 84, nowPoint.x - 42)),
             backgroundColor: theme.primaryOlive,
           },
         ]}
       >
         <Text style={[styles.nowText, { fontFamily: FONTS.urbanistBold }]}>
-          Now
+          Now · {displayTime}
         </Text>
       </View>
 
@@ -241,15 +315,21 @@ const styles = StyleSheet.create({
   nowBadge: {
     position: 'absolute',
     top: 0,
-    width: 44,
-    height: 20,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    height: 22,
+    borderRadius: 11,
+    minWidth: 80,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
   },
   nowText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#0A0B0D',
   },

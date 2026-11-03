@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,11 +7,13 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { useTheme } from '../theme/useTheme';
 import { FONTS } from '../theme/typography';
 import { DotMatrixBackground } from '../components/common/DotMatrixBackground';
 import { CircadianWave } from '../components/energy/CircadianWave';
+import { RhythmSetupModal } from '../components/energy/RhythmSetupModal';
 import { useEnergyStore } from '../store/useEnergyStore';
 import { CadenceTabBar, NavTab } from '../navigation/CadenceTabBar';
 
@@ -41,6 +43,22 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
     activeRoutineAtom,
   } = useEnergyStore();
 
+  const [showRhythmSetup, setShowRhythmSetup] = useState(false);
+
+  // Live real-time device hour tracker
+  const [nowHour, setNowHour] = useState(() => {
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setNowHour(d.getHours() + d.getMinutes() / 60);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const scoreInfo = currentEnergyScoreSelector();
   const phases = circadianPhaseSelector();
 
@@ -50,6 +68,51 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
   const secondWindRange = `${activeRoutineAtom?.secondWindStart || '16:30'}–${activeRoutineAtom?.secondWindEnd || '18:00'}`;
   const peakRange = `${phases?.morningPeakFocus?.start || '08:30'}–${phases?.morningPeakFocus?.end || '11:00'}`;
   const slumpRange = `${phases?.postprandialDip?.start || '13:00'}–${phases?.postprandialDip?.end || '15:30'}`;
+
+  // Dynamic phase title & description based on the user's live current hour
+  const getPhaseStatus = () => {
+    const [wakeH] = wakeTime.split(':').map(Number);
+    const [peakEndH] = (phases?.morningPeakFocus?.end || '11:00').split(':').map(Number);
+    const [slumpStartH] = (phases?.postprandialDip?.start || '13:00').split(':').map(Number);
+    const [slumpEndH] = (phases?.postprandialDip?.end || '15:30').split(':').map(Number);
+    const [windH] = windDownTime.split(':').map(Number);
+
+    if (nowHour >= wakeH && nowHour <= peakEndH) {
+      return {
+        badge: 'In your peak',
+        dotColor: theme.primaryOlive,
+        sub: `Until ${phases?.morningPeakFocus?.end || '11:00'} · best for deep work`,
+      };
+    }
+    if (nowHour > peakEndH && nowHour < slumpStartH) {
+      return {
+        badge: 'Steady flow',
+        dotColor: theme.indicators.peak,
+        sub: `Next slump at ${phases?.postprandialDip?.start || '13:00'} · execution mode`,
+      };
+    }
+    if (nowHour >= slumpStartH && nowHour <= slumpEndH) {
+      return {
+        badge: 'Energy slump',
+        dotColor: theme.indicators.slump,
+        sub: `Until ${phases?.postprandialDip?.end || '15:30'} · admin, rest or a walk`,
+      };
+    }
+    if (nowHour > slumpEndH && nowHour < windH) {
+      return {
+        badge: 'Second wind',
+        dotColor: theme.indicators.peak,
+        sub: `Active until ${secondWindRange.split('–')[1] || '18:00'} · workouts & meetings`,
+      };
+    }
+    return {
+      badge: 'Wind-down',
+      dotColor: theme.secondaryText,
+      sub: `Dim screens · prepare for sleep at ${activeRoutineAtom?.sleepTime || '22:30'}`,
+    };
+  };
+
+  const currentStatus = getPhaseStatus();
 
   const keyWindows: KeyWindowItem[] = [
     {
@@ -95,7 +158,7 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
       <DotMatrixBackground />
 
       <SafeAreaView style={styles.safeArea}>
-        {/* Top Header Row with Back Button, Title & Theme Toggle */}
+        {/* Top Header Row with Back Button, Title & Theme Toggle (Android Safe-Area Adjusted) */}
         <View style={styles.topNavRow}>
           <TouchableOpacity
             style={[
@@ -140,20 +203,31 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
           >
             <View style={styles.heroLeft}>
               <View style={styles.statusBadgeRow}>
-                <View style={[styles.greenPulseDot, { backgroundColor: theme.primaryOlive }]} />
+                <View style={[styles.greenPulseDot, { backgroundColor: currentStatus.dotColor }]} />
                 <Text style={[styles.statusBadgeText, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
-                  In your peak
+                  {currentStatus.badge}
                 </Text>
               </View>
 
               <Text style={[styles.statusSubtitle, { color: theme.secondaryText, fontFamily: FONTS.urbanistRegular }]}>
-                Until <Text style={{ fontFamily: FONTS.dotoBold, color: theme.text }}>11:00</Text> · best for deep work
+                {currentStatus.sub}
               </Text>
             </View>
 
-            <Text style={[styles.heroScore, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-              86
-            </Text>
+            <View style={styles.heroRightCol}>
+              {/* Settings Gear Button to Edit Sleep Habits / Routine (Image Reference) */}
+              <TouchableOpacity
+                style={[styles.gearBtn, { backgroundColor: theme.secondarySurface, borderColor: theme.border }]}
+                onPress={() => setShowRhythmSetup(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.gearIcon}>⚙️</Text>
+              </TouchableOpacity>
+
+              <Text style={[styles.heroScore, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
+                {scoreInfo.score}
+              </Text>
+            </View>
           </View>
 
           {/* Wave Chart Card */}
@@ -163,16 +237,18 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
               { backgroundColor: theme.primarySurface, borderColor: theme.border },
             ]}
           >
-            {/* Skia Cubic Bezier Wave with Shaded Columns and Now Pin */}
-            <CircadianWave currentHour={10.33} height={190} />
+            {/* Skia Cubic Bezier Wave with Dynamic Live Hour & Routine Anchoring */}
+            <CircadianWave currentHour={nowHour} routine={activeRoutineAtom} height={190} />
 
-            {/* Boundary Tags: Wake and Wind-down */}
+            {/* Boundary Tags: Wake and Wind-down (Tap to Edit Routine) */}
             <View style={styles.boundaryPillRow}>
-              <View
+              <TouchableOpacity
                 style={[
                   styles.boundaryPill,
                   { backgroundColor: theme.secondarySurface, borderColor: theme.border },
                 ]}
+                onPress={() => setShowRhythmSetup(true)}
+                activeOpacity={0.8}
               >
                 <Text style={[styles.boundaryLabel, { color: theme.secondaryText, fontFamily: FONTS.urbanistMedium }]}>
                   Wake{' '}
@@ -180,13 +256,15 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
                 <Text style={[styles.boundaryTime, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
                   {wakeTime}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
-              <View
+              <TouchableOpacity
                 style={[
                   styles.boundaryPill,
                   { backgroundColor: theme.secondarySurface, borderColor: theme.border },
                 ]}
+                onPress={() => setShowRhythmSetup(true)}
+                activeOpacity={0.8}
               >
                 <Text style={[styles.boundaryLabel, { color: theme.secondaryText, fontFamily: FONTS.urbanistMedium }]}>
                   Wind-down{' '}
@@ -194,7 +272,7 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
                 <Text style={[styles.boundaryTime, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
                   {windDownTime}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -205,9 +283,20 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
               { backgroundColor: theme.primarySurface, borderColor: theme.border },
             ]}
           >
-            <Text style={[styles.windowsCardTitle, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
-              Key windows
-            </Text>
+            <View style={styles.windowsCardHeader}>
+              <Text style={[styles.windowsCardTitle, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
+                Key windows
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => setShowRhythmSetup(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.customizeLink, { color: theme.primaryOlive, fontFamily: FONTS.urbanistMedium }]}>
+                  Customize
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.windowsList}>
               {keyWindows.map((item, index) => (
@@ -221,18 +310,19 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
                     ],
                   ]}
                 >
-                  <View style={[styles.windowDot, { backgroundColor: item.dotColor }]} />
-
-                  <View style={styles.windowInfo}>
-                    <Text style={[styles.windowTitle, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
-                      {item.title}
-                    </Text>
-                    <Text style={[styles.windowSubtitle, { color: theme.secondaryText, fontFamily: FONTS.urbanistRegular }]}>
+                  <View style={styles.windowLeftCol}>
+                    <View style={styles.windowTitleRow}>
+                      <View style={[styles.windowDot, { backgroundColor: item.dotColor }]} />
+                      <Text style={[styles.windowTitleText, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
+                        {item.title}
+                      </Text>
+                    </View>
+                    <Text style={[styles.windowSubtitleText, { color: theme.secondaryText, fontFamily: FONTS.urbanistRegular }]}>
                       {item.subtitle}
                     </Text>
                   </View>
 
-                  <Text style={[styles.windowTime, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
+                  <Text style={[styles.windowTimeText, { color: theme.text, fontFamily: FONTS.dotoSemiBold }]}>
                     {item.timeRange}
                   </Text>
                 </View>
@@ -240,14 +330,13 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
             </View>
           </View>
         </ScrollView>
-
-        {/* Floating 4-Tab Bottom Navigation Bar */}
-        <CadenceTabBar
-          activeTab="Energy"
-          onSelectTab={onNavigateTab || (() => {})}
-          onLongPressAi={onLongPressAi}
-        />
       </SafeAreaView>
+
+      {/* Sleeping Habits & Chronotype Questionnaire Modal */}
+      <RhythmSetupModal
+        visible={showRhythmSetup}
+        onClose={() => setShowRhythmSetup(false)}
+      />
     </View>
   );
 };
@@ -258,25 +347,26 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 10 : 0,
   },
   topNavRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 8,
   },
   navCircleBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 20,
+    fontSize: 16,
   },
   navTitle: {
     fontSize: 18,
@@ -286,32 +376,33 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 110,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
   heroBlock: {
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   heroLeft: {
     flex: 1,
+    marginRight: 12,
   },
   statusBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 6,
     gap: 8,
-    marginBottom: 4,
   },
   greenPulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   statusBadgeText: {
     fontSize: 18,
@@ -319,112 +410,106 @@ const styles = StyleSheet.create({
   statusSubtitle: {
     fontSize: 13,
   },
+  heroRightCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  gearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  gearIcon: {
+    fontSize: 14,
+  },
   heroScore: {
-    fontSize: 40,
-    lineHeight: 42,
-    marginLeft: 16,
+    fontSize: 36,
   },
   chartCard: {
-    borderRadius: 26,
+    borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingTop: 14,
-    paddingBottom: 16,
-    marginBottom: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
+    paddingHorizontal: 10,
+    marginBottom: 12,
   },
   boundaryPillRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    marginTop: 24,
+    marginTop: 14,
   },
   boundaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
     borderWidth: 1,
   },
   boundaryLabel: {
-    fontSize: 13,
+    fontSize: 12,
   },
   boundaryTime: {
     fontSize: 13,
   },
   windowsCard: {
-    borderRadius: 26,
+    borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    marginBottom: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  windowsCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   windowsCardTitle: {
-    fontSize: 17,
-    marginBottom: 10,
+    fontSize: 16,
+  },
+  customizeLink: {
+    fontSize: 13,
   },
   windowsList: {
-    gap: 0,
+    gap: 2,
   },
   windowRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 13,
+    paddingVertical: 12,
   },
   windowRowBorder: {
     borderBottomWidth: 1,
   },
-  windowDot: {
-    width: 11,
-    height: 11,
-    borderRadius: 5.5,
-  },
-  windowInfo: {
+  windowLeftCol: {
     flex: 1,
+    marginRight: 10,
   },
-  windowTitle: {
-    fontSize: 16,
+  windowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 2,
   },
-  windowSubtitle: {
-    fontSize: 12,
+  windowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  windowTime: {
-    fontSize: 13,
-  },
-  floatingTabBar: {
-    position: 'absolute',
-    bottom: 22,
-    left: 20,
-    right: 20,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  tabItem: {
-    height: 44,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  activeTabPill: {
-    paddingHorizontal: 18,
-  },
-  activeTabText: {
+  windowTitleText: {
     fontSize: 14,
   },
+  windowSubtitleText: {
+    fontSize: 11.5,
+    marginLeft: 16,
+  },
+  windowTimeText: {
+    fontSize: 12,
+  },
 });
-

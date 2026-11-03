@@ -34,7 +34,7 @@ export interface EnergyState {
   // Actions
   hydrate: () => Promise<void>;
   fetchDailyBiometrics: (dateStr?: string) => Promise<DailyBiometrics>;
-  fetchRoutine: () => Promise<RoutineModel>;
+  fetchRoutine: (userId?: string) => Promise<RoutineModel>;
   setActiveRoutine: (routine: RoutineModel) => Promise<void>;
   toggleBoostOption: (boostId: string) => Promise<void>;
   setBoostingEnergy: (boosting: boolean) => void;
@@ -129,9 +129,9 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
     }
   },
 
-  fetchRoutine: async (): Promise<RoutineModel> => {
+  fetchRoutine: async (userId?: string): Promise<RoutineModel> => {
     try {
-      const remoteRoutine = await energyService.fetchRoutine();
+      const remoteRoutine = await energyService.fetchRoutine(userId);
       set({ activeRoutineAtom: remoteRoutine });
       await activeRoutinePersistence.save(remoteRoutine);
       return remoteRoutine;
@@ -144,6 +144,11 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
   setActiveRoutine: async (routine: RoutineModel) => {
     set({ activeRoutineAtom: routine });
     await activeRoutinePersistence.save(routine);
+    try {
+      await energyService.saveRoutine(routine);
+    } catch (e) {
+      console.log('[useEnergyStore] Error saving routine to Supabase:', e);
+    }
     await get().fetchCircadianData();
   },
 

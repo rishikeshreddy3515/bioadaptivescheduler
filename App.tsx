@@ -36,6 +36,8 @@ import { NewTaskScreen } from './src/screens/NewTaskScreen';
 import { ReplanScreen } from './src/screens/ReplanScreen';
 import { EnergyStatusScreen } from './src/screens/EnergyStatusScreen';
 import { CircadianRhythmScreen } from './src/screens/CircadianRhythmScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
+import { AuthScreen } from './src/screens/AuthScreen';
 
 // AI Trigger Modal
 import { AskCadenceModal } from './src/components/ai/AskCadenceModal';
@@ -65,6 +67,7 @@ export default function App() {
   const [showReplanModal, setShowReplanModal] = useState(false);
   const [replanReason, setReplanReason] = useState<string | undefined>(undefined);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     // Hydrate persistent stores
@@ -185,15 +188,13 @@ export default function App() {
               />
             )}
 
-            {/* Profile Tab Fallback */}
+            {/* Screen 8: Profile & Circadian Customization */}
             {currentTab === 'Profile' && (
-              <TodayScreen
+              <ProfileScreen
                 onNavigateTab={handleTabChange}
-                onAddTask={() => setShowNewTaskModal(true)}
-                onReplan={() => setShowReplanModal(true)}
-                onViewTasks={() => handleTabChange('Tasks')}
-                onResetOnboarding={handleResetOnboarding}
                 onLongPressAi={() => setShowAiModal(true)}
+                onOpenAuth={() => setShowAuthModal(true)}
+                onResetOnboarding={handleResetOnboarding}
               />
             )}
 
@@ -235,6 +236,13 @@ export default function App() {
                 setShowReplanModal(true);
               }}
             />
+
+            {/* Auth Modal Overlay */}
+            {showAuthModal && (
+              <View style={StyleSheet.absoluteFill}>
+                <AuthScreen />
+              </View>
+            )}
           </View>
         )}
       </BottomSheetModalProvider>

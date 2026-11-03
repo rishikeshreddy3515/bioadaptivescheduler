@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
 import { isSupabaseConfigured } from '../api/supabaseClient';
@@ -17,7 +18,8 @@ import { isSupabaseConfigured } from '../api/supabaseClient';
 export const AuthScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   const {
@@ -30,6 +32,8 @@ export const AuthScreen: React.FC = () => {
     clearError,
     setError,
   } = useAuthStore();
+
+  const isSignUp = authMode === 'signup';
 
   const handleAuthAction = async () => {
     clearError();
@@ -49,7 +53,6 @@ export const AuthScreen: React.FC = () => {
     if (isSignUp) {
       const { error: signUpError } = await signUpWithPassword(trimmedEmail, password);
       if (!signUpError) {
-        // If not already authenticated, immediately sign in with password to avoid web confirmation
         if (useAuthStore.getState().status !== 'authenticated') {
           await signInWithPassword(trimmedEmail, password);
         }
@@ -65,16 +68,17 @@ export const AuthScreen: React.FC = () => {
     await signInWithGoogle();
   };
 
-  const toggleMode = () => {
+  const switchMode = (mode: 'signin' | 'signup') => {
     clearError();
     setNoticeMessage(null);
-    setIsSignUp((prev) => !prev);
+    setAuthMode(mode);
   };
 
   const hasConfig = isSupabaseConfigured();
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -82,12 +86,13 @@ export const AuthScreen: React.FC = () => {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* Header */}
           <View style={styles.headerContainer}>
             <View style={styles.headerTopRow}>
               <View style={styles.badgeContainer}>
-                <Text style={styles.badgeText}>LIFESTACK</Text>
+                <Text style={styles.badgeText}>LIFESTACK · CADENCE</Text>
               </View>
 
               <TouchableOpacity
@@ -95,18 +100,47 @@ export const AuthScreen: React.FC = () => {
                 onPress={signInAsGuest}
                 activeOpacity={0.7}
               >
-                <Text style={styles.closeBackText}>✕ Close</Text>
+                <Text style={styles.closeBackText}>Skip ✕</Text>
               </TouchableOpacity>
             </View>
 
             <Text style={styles.title}>
-              {isSignUp ? 'Create your account' : 'Welcome back'}
+              {isSignUp ? 'Create account' : 'Welcome back'}
             </Text>
             <Text style={styles.subtitle}>
               {isSignUp
-                ? 'Sign up to start planning your schedule around your energy.'
-                : 'Sign in to access your calendar, tasks, and circadian rhythms.'}
+                ? 'Sign up to personalize your circadian energy curve.'
+                : 'Sign in to access your synchronized schedule & rhythms.'}
             </Text>
+          </View>
+
+          {/* Sorted Segmented Tab Control: Sign In vs Create Account */}
+          <View style={styles.segmentedControlWrapper}>
+            <TouchableOpacity
+              style={[
+                styles.segmentTab,
+                !isSignUp && styles.segmentTabActive,
+              ]}
+              onPress={() => switchMode('signin')}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.segmentTabText, !isSignUp && styles.segmentTabTextActive]}>
+                Sign In
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.segmentTab,
+                isSignUp && styles.segmentTabActive,
+              ]}
+              onPress={() => switchMode('signup')}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.segmentTabText, isSignUp && styles.segmentTabTextActive]}>
+                Create Account
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Configuration Warning Banner if .env is missing keys */}
@@ -139,8 +173,9 @@ export const AuthScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Input Form */}
+          {/* Form Card */}
           <View style={styles.formContainer}>
+            {/* Email Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email Address</Text>
               <TextInput
@@ -159,36 +194,46 @@ export const AuthScreen: React.FC = () => {
               />
             </View>
 
+            {/* Password Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="••••••••"
-                placeholderTextColor="#64748B"
-                value={password}
-                onChangeText={(text) => {
-                  if (error) clearError();
-                  setPassword(text);
-                }}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isLoading}
-              />
+              <View style={styles.passwordInputWrapper}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="••••••••"
+                  placeholderTextColor="#64748B"
+                  value={password}
+                  onChangeText={(text) => {
+                    if (error) clearError();
+                    setPassword(text);
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!isLoading}
+                />
+                <TouchableOpacity
+                  style={styles.eyeToggleBtn}
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.eyeToggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* Email Submit Button */}
+            {/* Primary Action Button (Sign In or Create Account) */}
             <TouchableOpacity
               style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
               onPress={handleAuthAction}
               disabled={isLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color="#0A0B0D" />
               ) : (
                 <Text style={styles.primaryButtonText}>
-                  {isSignUp ? 'Create Account' : 'Sign In'}
+                  {isSignUp ? 'Create My Account' : 'Sign In'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -196,54 +241,43 @@ export const AuthScreen: React.FC = () => {
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
+              <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Google OAuth Button (Section 3.3.A) */}
+            {/* Sorted Options: Google OAuth */}
             <TouchableOpacity
               style={[styles.googleButton, isLoading && styles.buttonDisabled]}
               onPress={handleGoogleSignIn}
               disabled={isLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               <View style={styles.googleIconContainer}>
                 <Text style={styles.googleIconText}>G</Text>
               </View>
-              <Text style={styles.googleButtonText}>Sign in with Google</Text>
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
             </TouchableOpacity>
 
-            {/* Guest Login Option (Instant bypass) */}
-            <TouchableOpacity
-              style={[styles.guestButton, isLoading && styles.buttonDisabled]}
-              onPress={signInAsGuest}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.guestButtonText}>⚡ Continue as Guest (Skip Sign In)</Text>
-            </TouchableOpacity>
-
-            {/* Demo Account Option */}
+            {/* Sorted Options: Demo Account Button (One-tap test account) */}
             <TouchableOpacity
               style={[styles.demoButton, isLoading && styles.buttonDisabled]}
               onPress={signInAsGuest}
               disabled={isLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Text style={styles.demoButtonText}>✨ Continue with Demo Account</Text>
+              <Text style={styles.demoButtonIcon}>✨</Text>
+              <Text style={styles.demoButtonText}>Continue with Demo Account</Text>
             </TouchableOpacity>
 
-            {/* Toggle Mode */}
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchPromptText}>
-                {isSignUp ? 'Already have an account?' : "Don't have an account yet?"}
-              </Text>
-              <TouchableOpacity onPress={toggleMode} disabled={isLoading}>
-                <Text style={styles.switchActionText}>
-                  {isSignUp ? ' Sign In' : ' Create Account'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Sorted Options: Guest Mode */}
+            <TouchableOpacity
+              style={styles.guestLinkBtn}
+              onPress={signInAsGuest}
+              disabled={isLoading}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.guestLinkText}>⚡ Skip login and use offline guest mode</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -255,129 +289,144 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0F172A',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 8 : 0,
   },
   keyboardContainer: {
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 36,
+    paddingTop: 16,
+    paddingBottom: 48,
   },
   headerContainer: {
-    marginBottom: 28,
+    marginBottom: 20,
   },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  closeBackBtn: {
+  badgeContainer: {
     backgroundColor: '#1E293B',
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#334155',
+  },
+  badgeText: {
+    color: '#38E1B0',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  closeBackBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#1E293B',
   },
   closeBackText: {
     color: '#94A3B8',
     fontSize: 12,
     fontWeight: '600',
   },
-  badgeContainer: {
-    alignSelf: 'flex-start',
+  title: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    lineHeight: 20,
+  },
+  segmentedControlWrapper: {
+    flexDirection: 'row',
     backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: '#334155',
   },
-  badgeText: {
-    color: '#38BDF8',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
+  segmentTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginBottom: 8,
+  segmentTabActive: {
+    backgroundColor: '#38E1B0',
   },
-  subtitle: {
-    fontSize: 15,
+  segmentTabText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: '#94A3B8',
-    lineHeight: 22,
+  },
+  segmentTabTextActive: {
+    color: '#0A0B0D',
+    fontWeight: '700',
   },
   warningBanner: {
-    backgroundColor: 'rgba(234, 179, 8, 0.12)',
-    borderWidth: 1,
-    borderColor: '#EAB308',
-    borderRadius: 10,
+    backgroundColor: '#78350F',
+    borderRadius: 12,
     padding: 14,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   warningTitle: {
-    color: '#FDE047',
+    color: '#FDE68A',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 4,
   },
   warningText: {
-    color: '#FEF08A',
-    fontSize: 13,
-    lineHeight: 18,
+    color: '#FDE68A',
+    fontSize: 12,
   },
   errorBanner: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    borderRadius: 10,
+    backgroundColor: '#7F1D1D',
+    borderRadius: 12,
     padding: 14,
-    marginBottom: 20,
+    marginBottom: 16,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
   errorTextContainer: {
     flex: 1,
-    marginRight: 12,
   },
   errorTitle: {
-    color: '#F87171',
+    color: '#FECACA',
     fontWeight: '700',
     fontSize: 13,
     marginBottom: 2,
   },
   errorMessage: {
     color: '#FCA5A5',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
   },
   dismissButton: {
-    padding: 4,
+    padding: 6,
   },
   dismissText: {
-    color: '#F87171',
-    fontSize: 16,
+    color: '#FECACA',
+    fontSize: 14,
     fontWeight: '700',
   },
   noticeBanner: {
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-    borderWidth: 1,
-    borderColor: '#22C55E',
-    borderRadius: 10,
+    backgroundColor: '#064E3B',
+    borderRadius: 12,
     padding: 14,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   noticeText: {
-    color: '#86EFAC',
+    color: '#A7F3D0',
     fontSize: 13,
-    lineHeight: 18,
   },
   formContainer: {
     gap: 16,
@@ -386,37 +435,71 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   label: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#CBD5E1',
+    letterSpacing: 0.5,
   },
   input: {
     backgroundColor: '#1E293B',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    color: '#FFFFFF',
     fontSize: 15,
-    color: '#F8FAFC',
+  },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    height: 52,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    color: '#FFFFFF',
+    fontSize: 15,
+  },
+  eyeToggleBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  eyeToggleText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
   },
   primaryButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 10,
-    paddingVertical: 14,
+    backgroundColor: '#38E1B0',
+    height: 52,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    shadowColor: '#3B82F6',
+    marginTop: 4,
+    shadowColor: '#38E1B0',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 4,
+  },
+  primaryButtonText: {
+    color: '#0A0B0D',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 12,
+    gap: 10,
   },
   dividerLine: {
     flex: 1,
@@ -425,91 +508,63 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    paddingHorizontal: 12,
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
   },
   googleButton: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    height: 52,
+    borderRadius: 14,
     gap: 10,
   },
   googleIconContainer: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#EA4335',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4285F4',
     alignItems: 'center',
     justifyContent: 'center',
   },
   googleIconText: {
     color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 13,
+    fontSize: 14,
   },
   googleButtonText: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  guestButton: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1.5,
-    borderColor: '#38BDF8',
-    borderRadius: 10,
-    paddingVertical: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-  },
-  guestButtonText: {
-    color: '#38BDF8',
+    color: '#0F172A',
     fontSize: 15,
     fontWeight: '700',
   },
   demoButton: {
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
-    borderRadius: 10,
-    paddingVertical: 11,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+    backgroundColor: '#1E293B',
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 225, 176, 0.4)',
+    gap: 8,
+  },
+  demoButtonIcon: {
+    fontSize: 16,
   },
   demoButtonText: {
-    color: '#7DD3FC',
+    color: '#38E1B0',
     fontSize: 14,
     fontWeight: '600',
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  guestLinkBtn: {
     alignItems: 'center',
-    marginTop: 8,
+    paddingVertical: 10,
+    marginTop: 4,
   },
-  switchPromptText: {
-    color: '#94A3B8',
-    fontSize: 14,
-  },
-  switchActionText: {
-    color: '#38BDF8',
-    fontSize: 14,
-    fontWeight: '700',
+  guestLinkText: {
+    color: '#64748B',
+    fontSize: 13,
   },
 });
