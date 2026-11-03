@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,6 +6,8 @@ import {
   useWindowDimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  TouchableOpacity,
+  FlatList,
 } from 'react-native';
 import Animated, {
   SharedValue,
@@ -14,6 +16,7 @@ import Animated, {
   useAnimatedScrollHandler,
   interpolate,
   Extrapolation,
+  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../../theme/useTheme';
@@ -42,11 +45,12 @@ interface TaskCoverFlow3DProps {
   taskTitle: string;
   bestTime?: string;
   windowLabel?: string;
+  showFloatingCorporateBadge?: boolean;
 }
 
-const CARD_WIDTH = 205;
-const CARD_HEIGHT = 215;
-const ITEM_INTERVAL = 120; // Exact overlap from design mockup (Image 1, 2, 3)
+const CARD_WIDTH = 210;
+const CARD_HEIGHT = 220;
+const ITEM_INTERVAL = 115; // Overlap spacing matching Image 1, 2, and 3
 
 export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
   tasks,
@@ -57,9 +61,11 @@ export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
   taskTitle,
   bestTime,
   windowLabel,
+  showFloatingCorporateBadge = false,
 }) => {
   const { width } = useWindowDimensions();
   const { isDark } = useTheme();
+  const flatListRef = useRef<FlatList>(null);
   const scrollX = useSharedValue(selectedIndex * ITEM_INTERVAL);
 
   const scrollHandler = useAnimatedScrollHandler({
@@ -72,10 +78,29 @@ export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
     event: NativeSyntheticEvent<NativeScrollEvent>
   ) => {
     const idx = Math.round(event.nativeEvent.contentOffset.x / ITEM_INTERVAL);
-    if (idx >= 0 && idx < tasks.length && idx !== selectedIndex) {
-      onSelectIndex(idx);
+    const clamped = Math.max(0, Math.min(tasks.length - 1, idx));
+    if (clamped !== selectedIndex) {
+      onSelectIndex(clamped);
     }
   };
+
+  const handleCardPress = (index: number) => {
+    if (index === selectedIndex) return;
+    flatListRef.current?.scrollToOffset({
+      offset: index * ITEM_INTERVAL,
+      animated: true,
+    });
+    onSelectIndex(index);
+  };
+
+  useEffect(() => {
+    if (flatListRef.current) {
+      flatListRef.current.scrollToOffset({
+        offset: selectedIndex * ITEM_INTERVAL,
+        animated: true,
+      });
+    }
+  }, [selectedIndex]);
 
   const centerSpacer = (width - CARD_WIDTH) / 2;
   const spec = ACTIVITY_COLORS[activeActivity] || ACTIVITY_COLORS.deep_work;
@@ -83,7 +108,32 @@ export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
 
   return (
     <View style={styles.carouselContainer}>
+      {/* Optional Floating Corporate 87% Glass Badge (from Image 1 & 2) */}
+      {showFloatingCorporateBadge && (
+        <View style={styles.floatingCorporateBadge}>
+          <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.corporateHeaderRow}>
+            <View>
+              <Text style={styles.corporateTitle}>Corporate</Text>
+              <Text style={styles.corporateSubtitle}>Jan 01 - Mar 31</Text>
+            </View>
+            <View style={styles.corporateArrowBtn}>
+              <Text style={styles.corporateArrowText}>→</Text>
+            </View>
+          </View>
+          <View style={styles.corporateMetricRow}>
+            <Text style={styles.corporateMetricText}>87%</Text>
+            <View style={styles.corporateGreenDotWrapper}>
+              <View style={styles.corporateGreenDotOuter}>
+                <View style={styles.corporateGreenDotInner} />
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
       <Animated.FlatList
+        ref={flatListRef as any}
         data={tasks}
         keyExtractor={(item) => item.id}
         horizontal
@@ -98,6 +148,11 @@ export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         onMomentumScrollEnd={handleMomentumScrollEnd}
+        getItemLayout={(_, index) => ({
+          length: ITEM_INTERVAL,
+          offset: ITEM_INTERVAL * index,
+          index,
+        })}
         renderItem={({ item, index }) => (
           <CoverFlowCard
             item={item}
@@ -110,6 +165,7 @@ export const TaskCoverFlow3D: React.FC<TaskCoverFlow3DProps> = ({
             taskTitle={taskTitle}
             bestTime={bestTime}
             windowLabel={windowLabel}
+            onPress={() => handleCardPress(index)}
           />
         )}
       />
@@ -128,6 +184,7 @@ interface CoverFlowCardProps {
   taskTitle: string;
   bestTime?: string;
   windowLabel?: string;
+  onPress: () => void;
 }
 
 const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
@@ -141,6 +198,7 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
   taskTitle,
   bestTime,
   windowLabel,
+  onPress,
 }) => {
   const { isDark } = useTheme();
 
@@ -148,40 +206,43 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
     const itemPosition = index * ITEM_INTERVAL;
     const diff = (scrollX.value - itemPosition) / ITEM_INTERVAL;
 
-    // 3D Rotation: left cards rotate inward +44deg, right cards rotate inward -44deg
+    // 3D Perspective Rotation:
+    // Left cards (diff > 0): left edge swings into screen (-Z), right edge closer to viewer (-38deg to -46deg)
+    // Right cards (diff < 0): right edge swings into screen (-Z), left edge closer to viewer (+38deg to +46deg)
+    // Center card (diff = 0): 0deg facing squarely forward!
     const rotateY = interpolate(
       diff,
       [-3, -2, -1, 0, 1, 2, 3],
-      [-50, -46, -42, 0, 42, 46, 50],
+      [46, 42, 38, 0, -38, -42, -46],
       Extrapolation.CLAMP
     );
 
-    // Scale: center card is enlarged (1.06), side cards scale down
+    // Scale: center card is elevated (1.08), side cards scale down gracefully
     const scale = interpolate(
       diff,
       [-2, -1, 0, 1, 2],
-      [0.80, 0.88, 1.06, 0.88, 0.80],
+      [0.82, 0.90, 1.08, 0.90, 0.82],
       Extrapolation.CLAMP
     );
 
-    // Overlap translation along x-axis
+    // Overlap translation along x-axis to tighten the deck
     const translateX = interpolate(
       diff,
-      [-2, -1, 0, 1, 2],
-      [-28, -14, 0, 14, 28],
+      [-3, -2, -1, 0, 1, 2, 3],
+      [-32, -22, -10, 0, 10, 22, 32],
       Extrapolation.CLAMP
     );
 
-    // Opacity
+    // Subtle Opacity curve
     const opacity = interpolate(
       diff,
       [-3, -2, -1, 0, 1, 2, 3],
-      [0.35, 0.65, 0.92, 1, 0.92, 0.65, 0.35],
+      [0.42, 0.72, 0.95, 1, 0.95, 0.72, 0.42],
       Extrapolation.CLAMP
     );
 
     // Dynamic zIndex: highest at center
-    const zIndex = Math.round(100 - Math.abs(diff) * 12);
+    const zIndex = Math.round(100 - Math.abs(diff) * 15);
 
     return {
       zIndex,
@@ -202,20 +263,27 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
   const spec = ACTIVITY_COLORS[isCenter ? activeActivity : item.category] || ACTIVITY_COLORS.deep_work;
   const categoryLabel = spec.label;
 
-  // Render glowing Emerald folder card (from Image 1, 2, 3)
+  // 1. Render glowing Emerald folder card (from Image 1, 2, 3)
   if (!isCenter && item.isEmerald) {
     return (
       <Animated.View style={[styles.cardWrapper, animatedStyle]}>
-        <View style={[styles.glassCard, styles.emeraldCard]}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onPress}
+          style={[styles.glassCard, styles.emeraldCard]}
+        >
           <BlurView
-            intensity={25}
+            intensity={35}
             tint="dark"
             style={StyleSheet.absoluteFill}
           />
 
+          {/* Top Edge Specular Shine */}
+          <View style={styles.topRimHighlight} />
+
           {/* Folder Top Header with user badge */}
           <View style={styles.sideCardTop}>
-            <View style={styles.userBadgeRow}>
+            <View style={styles.userBadgeCapsule}>
               <Text style={styles.userBadgeIcon}>👤</Text>
               <Text style={styles.emeraldUserCount}>{item.userCount || 4}</Text>
             </View>
@@ -223,10 +291,10 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
 
           {/* Document Skeleton Lines in translucent mint/white */}
           <View style={styles.skeletonContainer}>
-            <View style={[styles.skeletonLine, { width: '48%', backgroundColor: 'rgba(255, 255, 255, 0.45)', height: 6 }]} />
-            <View style={[styles.skeletonLine, { width: '88%', backgroundColor: 'rgba(255, 255, 255, 0.3)', height: 4 }]} />
-            <View style={[styles.skeletonLine, { width: '75%', backgroundColor: 'rgba(255, 255, 255, 0.3)', height: 4 }]} />
-            <View style={[styles.skeletonLine, { width: '82%', backgroundColor: 'rgba(255, 255, 255, 0.3)', height: 4 }]} />
+            <View style={[styles.skeletonLine, { width: '48%', backgroundColor: 'rgba(255, 255, 255, 0.55)', height: 6 }]} />
+            <View style={[styles.skeletonLine, { width: '88%', backgroundColor: 'rgba(255, 255, 255, 0.35)', height: 4.5 }]} />
+            <View style={[styles.skeletonLine, { width: '74%', backgroundColor: 'rgba(255, 255, 255, 0.35)', height: 4.5 }]} />
+            <View style={[styles.skeletonLine, { width: '82%', backgroundColor: 'rgba(255, 255, 255, 0.35)', height: 4.5 }]} />
           </View>
 
           {/* Tab Label at bottom */}
@@ -235,16 +303,18 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
               {item.tabLabel || 'Peak focus'}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </Animated.View>
     );
   }
 
-  // Render frosted glass folder card (side cards in Image 1, 2, 3)
+  // 2. Render frosted glass folder card (side cards in Image 1, 2, 3)
   if (!isCenter) {
     return (
       <Animated.View style={[styles.cardWrapper, animatedStyle]}>
-        <View
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onPress}
           style={[
             styles.glassCard,
             styles.frostedSideCard,
@@ -253,22 +323,33 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
                 ? 'rgba(255, 255, 255, 0.08)'
                 : 'rgba(255, 255, 255, 0.75)',
               borderColor: isDark
-                ? 'rgba(255, 255, 255, 0.18)'
+                ? 'rgba(255, 255, 255, 0.22)'
                 : 'rgba(0, 0, 0, 0.1)',
             },
           ]}
         >
           <BlurView
-            intensity={20}
+            intensity={25}
             tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
           />
 
+          {/* Top Edge Specular Shine */}
+          <View style={styles.topRimHighlight} />
+
           {/* Header with user count */}
           <View style={styles.sideCardTop}>
-            <View style={styles.userBadgeRow}>
-              <Text style={[styles.userBadgeIcon, { color: isDark ? 'rgba(255, 255, 255, 0.7)' : '#333' }]}>👤</Text>
-              <Text style={[styles.sideUserCount, { color: isDark ? 'rgba(255, 255, 255, 0.85)' : '#222', fontFamily: FONTS.urbanistSemiBold }]}>
+            <View
+              style={[
+                styles.userBadgeCapsule,
+                {
+                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.06)',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+                },
+              ]}
+            >
+              <Text style={[styles.userBadgeIcon, { color: isDark ? 'rgba(255, 255, 255, 0.75)' : '#333' }]}>👤</Text>
+              <Text style={[styles.sideUserCount, { color: isDark ? 'rgba(255, 255, 255, 0.9)' : '#222', fontFamily: FONTS.urbanistSemiBold }]}>
                 {item.userCount || 4}
               </Text>
             </View>
@@ -276,10 +357,10 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
 
           {/* Document Skeleton Lines */}
           <View style={styles.skeletonContainer}>
-            <View style={[styles.skeletonLine, { width: '45%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.15)', height: 5 }]} />
-            <View style={[styles.skeletonLine, { width: '84%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)', height: 4 }]} />
-            <View style={[styles.skeletonLine, { width: '70%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)', height: 4 }]} />
-            <View style={[styles.skeletonLine, { width: '78%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)', height: 4 }]} />
+            <View style={[styles.skeletonLine, { width: '46%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.18)', height: 5.5 }]} />
+            <View style={[styles.skeletonLine, { width: '85%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.09)', height: 4.5 }]} />
+            <View style={[styles.skeletonLine, { width: '70%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.09)', height: 4.5 }]} />
+            <View style={[styles.skeletonLine, { width: '78%', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.09)', height: 4.5 }]} />
           </View>
 
           {/* Bottom Tab Title */}
@@ -288,7 +369,7 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
               style={[
                 styles.sideTabLabel,
                 {
-                  color: isDark ? 'rgba(255, 255, 255, 0.8)' : '#222',
+                  color: isDark ? 'rgba(255, 255, 255, 0.85)' : '#222',
                   fontFamily: FONTS.urbanistSemiBold,
                 },
               ]}
@@ -297,12 +378,12 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
               {item.tabLabel || item.title}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </Animated.View>
     );
   }
 
-  // Render Center Interactive Card (Active Card in Image 3)
+  // 3. Render Center Interactive Card (Active Card in Image 3)
   return (
     <Animated.View style={[styles.cardWrapper, animatedStyle]}>
       <View
@@ -310,23 +391,26 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
           styles.glassCard,
           {
             backgroundColor: isDark
-              ? 'rgba(29, 36, 26, 0.76)'
-              : 'rgba(252, 251, 247, 0.88)',
+              ? 'rgba(25, 33, 24, 0.82)'
+              : 'rgba(252, 251, 247, 0.92)',
             borderColor: activeColor,
             borderWidth: 1.8,
             shadowColor: activeColor,
             shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.85,
-            shadowRadius: 22,
-            elevation: 12,
+            shadowOpacity: 0.9,
+            shadowRadius: 26,
+            elevation: 16,
           },
         ]}
       >
         <BlurView
-          intensity={25}
+          intensity={30}
           tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
+
+        {/* Top Edge Specular Shine */}
+        <View style={[styles.topRimHighlight, { backgroundColor: 'rgba(255, 255, 255, 0.35)' }]} />
 
         {/* Card Header: Title, Category, Circle Arrow */}
         <View style={styles.cardHeader}>
@@ -361,7 +445,7 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
           </View>
         </View>
 
-        {/* Card Center: Large Doto Duration Display */}
+        {/* Card Center: Large Doto Dot-Matrix Duration Display */}
         <View style={styles.cardCenter}>
           <Text
             style={[
@@ -384,8 +468,9 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
                 styles.slotCapsule,
                 {
                   backgroundColor: isDark
-                    ? 'rgba(0, 0, 0, 0.45)'
+                    ? 'rgba(0, 0, 0, 0.52)'
                     : 'rgba(0, 0, 0, 0.08)',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.06)',
                 },
               ]}
             >
@@ -404,6 +489,7 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
                     fontFamily: FONTS.urbanistMedium,
                   },
                 ]}
+                numberOfLines={1}
               >
                 {displayBestTime} Mon · {displayWindowLabel}
               </Text>
@@ -412,13 +498,13 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
 
           {/* Overlapping User Avatars from Image 3 */}
           <View style={styles.avatarRow}>
-            <View style={[styles.avatarCircle, { backgroundColor: '#367E87' }]}>
+            <View style={[styles.avatarCircle, { backgroundColor: '#2A7B88' }]}>
               <Text style={styles.avatarInitial}>R</Text>
             </View>
-            <View style={[styles.avatarCircle, { backgroundColor: '#AC5B47', marginLeft: -7 }]}>
+            <View style={[styles.avatarCircle, { backgroundColor: '#C25E42', marginLeft: -7 }]}>
               <Text style={styles.avatarInitial}>A</Text>
             </View>
-            <View style={[styles.avatarCircle, { backgroundColor: '#4A7C59', marginLeft: -7 }]}>
+            <View style={[styles.avatarCircle, { backgroundColor: '#3B8256', marginLeft: -7 }]}>
               <Text style={styles.avatarInitial}>K</Text>
             </View>
           </View>
@@ -430,7 +516,7 @@ const CoverFlowCard: React.FC<CoverFlowCardProps> = ({
 
 const styles = StyleSheet.create({
   carouselContainer: {
-    height: 250,
+    height: 260,
     width: '100%',
     justifyContent: 'center',
     marginVertical: 4,
@@ -447,40 +533,57 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: 'space-between',
     overflow: 'hidden',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 24,
+  },
+  topRimHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 16,
+    right: 16,
+    height: 1.2,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    borderRadius: 1,
   },
   emeraldCard: {
-    backgroundColor: 'rgba(16, 185, 129, 0.42)',
+    backgroundColor: 'rgba(16, 185, 129, 0.52)',
     borderColor: '#34D399',
-    borderWidth: 1.5,
+    borderWidth: 1.8,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.75,
-    shadowRadius: 18,
-    elevation: 8,
+    shadowOpacity: 0.88,
+    shadowRadius: 22,
+    elevation: 12,
   },
   frostedSideCard: {
-    borderWidth: 1,
+    borderWidth: 1.2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 5,
   },
   sideCardTop: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
     alignItems: 'center',
   },
-  userBadgeRow: {
+  userBadgeCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   userBadgeIcon: {
-    fontSize: 12,
+    fontSize: 11,
   },
   emeraldUserCount: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#FFF',
     fontWeight: '700',
   },
@@ -492,7 +595,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   skeletonLine: {
-    borderRadius: 2,
+    borderRadius: 2.5,
   },
   sideCardBottom: {
     marginTop: 'auto',
@@ -518,30 +621,35 @@ const styles = StyleSheet.create({
   taskTitleText: {
     fontSize: 15,
     marginBottom: 2,
+    letterSpacing: -0.2,
   },
   taskCategoryText: {
     fontSize: 12,
   },
   cardArrowCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    width: 25,
+    height: 25,
+    borderRadius: 12.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   cardCenter: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 6,
+    marginVertical: 4,
   },
   dotoDurationValue: {
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 38,
+    lineHeight: 42,
     textAlign: 'center',
+    letterSpacing: 1.5,
   },
   dotoMinUnit: {
     fontSize: 16,
+    fontFamily: 'Urbanist_500Medium',
   },
   cardFooter: {
     flexDirection: 'row',
@@ -558,6 +666,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 10,
+    borderWidth: 1,
     gap: 4,
   },
   slotClockIcon: {
@@ -567,7 +676,7 @@ const styles = StyleSheet.create({
   coloredDotsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 2.5,
   },
   coloredDot: {
     width: 4.5,
@@ -575,7 +684,8 @@ const styles = StyleSheet.create({
     borderRadius: 2.25,
   },
   slotDetailsText: {
-    fontSize: 10,
+    fontSize: 9.5,
+    flexShrink: 1,
   },
   avatarRow: {
     flexDirection: 'row',
@@ -589,10 +699,94 @@ const styles = StyleSheet.create({
     borderColor: '#FCFBF7',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
   },
   avatarInitial: {
     fontSize: 9,
     color: '#FCFBF7',
     fontWeight: '700',
+  },
+
+  // Floating Corporate Stats Badge (from Image 1 & 2)
+  floatingCorporateBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 20,
+    zIndex: 150,
+    width: 140,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    backgroundColor: 'rgba(30, 35, 30, 0.65)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  corporateHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  corporateTitle: {
+    fontSize: 13,
+    color: '#FCFBF7',
+    fontFamily: 'Urbanist_700Bold',
+  },
+  corporateSubtitle: {
+    fontSize: 9.5,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontFamily: 'Urbanist_400Regular',
+  },
+  corporateArrowBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  corporateArrowText: {
+    fontSize: 10,
+    color: '#FFF',
+  },
+  corporateMetricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  corporateMetricText: {
+    fontSize: 22,
+    color: '#FCFBF7',
+    fontFamily: 'Urbanist_700Bold',
+  },
+  corporateGreenDotWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  corporateGreenDotOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+  },
+  corporateGreenDotInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0F172A',
   },
 });

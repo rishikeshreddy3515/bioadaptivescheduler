@@ -74,34 +74,101 @@ const syncSessionToStorage = async (session: Session | null) => {
 
 /**
  * Robustly parses parameters from both query string and hash fragment of incoming auth URLs
+ * Pure string splitting on '?' and '#' - completely resilient on Hermes engine.
  */
-const extractParamsFromUrl = (urlString: string): URLSearchParams => {
-  const params = new URLSearchParams();
-  try {
-    const parsed = new URL(urlString);
-    if (parsed.search) {
-      new URLSearchParams(parsed.search).forEach((v, k) => params.set(k, v));
-    }
-    if (parsed.hash) {
-      const hashStr = parsed.hash.startsWith('#') ? parsed.hash.substring(1) : parsed.hash;
-      new URLSearchParams(hashStr).forEach((v, k) => params.set(k, v));
-    }
-  } catch {
-    const queryIdx = urlString.indexOf('?');
-    const hashIdx = urlString.indexOf('#');
-    if (queryIdx !== -1) {
-      const queryPart =
-        hashIdx !== -1 && hashIdx > queryIdx
-          ? urlString.substring(queryIdx + 1, hashIdx)
-          : urlString.substring(queryIdx + 1);
-      new URLSearchParams(queryPart).forEach((v, k) => params.set(k, v));
-    }
-    if (hashIdx !== -1) {
-      const hashPart = urlString.substring(hashIdx + 1);
-      new URLSearchParams(hashPart).forEach((v, k) => params.set(k, v));
+const extractParamsFromUrl = (urlString: string): Map<string, string> => {
+  const params = new Map<string, string>();
+  if (!urlString) return params;
+
+  const segments = urlString.split(/[?#]/);
+  for (let i = 1; i < segments.length; i++) {
+    const pairStrings = segments[i].split('&');
+    for (const pair of pairStrings) {
+      if (!pair) continue;
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = decodeURIComponent(pair.substring(0, eqIdx));
+        const val = decodeURIComponent(pair.substring(eqIdx + 1));
+        params.set(key, val);
+      } else {
+        params.set(decodeURIComponent(pair), '');
+      }
     }
   }
   return params;
+};
+
+/**
+ * Automatically seeds initial user profile, CADENCE chronobiology routine, and baseline biometrics in Supabase
+ */
+export const ensureUserSeeded = async (user: User | null): Promise<void> => {
+  if (!user || !isSupabaseConfigured()) return;
+
+  try {
+    // 1. Upsert public.profiles
+    try {
+      await supabase.from('profiles').upsert(
+        {
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.fullName || user.user_metadata?.full_name || 'Cadence User',
+          avatar_url: user.user_metadata?.avatar_url || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    } catch (profileErr: any) {
+      console.log('[Auth] Profile upsert note:', profileErr?.message);
+    }
+
+    // 2. Ensure public.routines row exists
+    try {
+      const { data: routineData } = await supabase
+        .from('routines')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!routineData) {
+        await supabase.from('routines').insert({
+          user_id: user.id,
+          wake_time: '06:30:00',
+          wind_down_time: '21:30:00',
+          caffeine_cutoff: '14:00:00',
+          second_wind_start: '16:30:00',
+          second_wind_end: '18:00:00',
+        });
+      }
+    } catch (routineErr: any) {
+      console.log('[Auth] Routine seed note:', routineErr?.message);
+    }
+
+    // 3. Ensure today's public.biometrics_daily_metrics row exists
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: bioData } = await supabase
+        .from('biometrics_daily_metrics')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('date', today)
+        .maybeSingle();
+
+      if (!bioData) {
+        await supabase.from('biometrics_daily_metrics').insert({
+          user_id: user.id,
+          date: today,
+          sleep_hours: 7.2,
+          hrv_ms: 64,
+          resting_hr_bpm: 64,
+          readiness_score: 82,
+        });
+      }
+    } catch (bioErr: any) {
+      console.log('[Auth] Biometrics seed note:', bioErr?.message);
+    }
+  } catch (seedErr) {
+    console.log('[Auth] User seed non-blocking warning:', seedErr);
+  }
 };
 
 /**
@@ -139,6 +206,7 @@ const handleAuthUrl = async (url: string, set: any): Promise<boolean> => {
     if (sessionData.session) {
       console.log('[Auth] Session established successfully for user:', sessionData.user?.id);
       await syncSessionToStorage(sessionData.session);
+      await ensureUserSeeded(sessionData.user);
       set({
         status: 'authenticated',
         session: sessionData.session,
@@ -169,6 +237,7 @@ const handleAuthUrl = async (url: string, set: any): Promise<boolean> => {
     if (sessionData.session) {
       console.log('[Auth] Session established via PKCE for user:', sessionData.user?.id);
       await syncSessionToStorage(sessionData.session);
+      await ensureUserSeeded(sessionData.user);
       set({
         status: 'authenticated',
         session: sessionData.session,
@@ -293,6 +362,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       await syncSessionToStorage(data.session);
+      await ensureUserSeeded(data.user);
 
       set({
         status: 'authenticated',
@@ -314,6 +384,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const message = err?.message || 'An unexpected error occurred during sign in';
       set({ error: message, isLoading: false });
       return { error: new Error(message) };
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -327,25 +399,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const redirectUrl = getAuthRedirectUri();
-
-      // Sign up with mobile redirect URI to prevent redirecting to localhost:3000
+      // Direct sign-up without external localhost redirect to prevent mobile browser hang
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: {
-          emailRedirectTo: redirectUrl,
-        },
       });
 
       if (error) {
+        // If user already registered, immediately attempt sign-in
+        if (error.message?.toLowerCase().includes('already registered')) {
+          const signInRes = await get().signInWithPassword(email, password);
+          return { error: signInRes.error, user: get().user };
+        }
         set({ error: error.message, isLoading: false });
         return { error, user: null };
       }
 
       if (data.session) {
-        // Immediate session returned (email confirmations disabled)
+        // Immediate session returned
         await syncSessionToStorage(data.session);
+        await ensureUserSeeded(data.user);
         set({
           status: 'authenticated',
           session: data.session,
@@ -362,7 +435,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         return { error: null, user: data.user };
       } else {
-        // Sign user in directly with credentials without expecting external web confirmation
+        // Sign user in directly with password
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -370,6 +443,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         if (!signInError && signInData.session) {
           await syncSessionToStorage(signInData.session);
+          await ensureUserSeeded(signInData.user);
           set({
             status: 'authenticated',
             session: signInData.session,
@@ -386,9 +460,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
           return { error: null, user: signInData.user };
         } else {
-          // If Supabase project still enforces email confirmation in dashboard
           const warnMsg = signInError?.message?.includes('Email not confirmed')
-            ? 'Account created! If you see "Email not confirmed", toggle OFF "Confirm email" in your Supabase Dashboard (Auth -> Providers -> Email).'
+            ? 'Account created! If email confirmation is required, confirm via your email or disable confirmation in Supabase dashboard.'
             : (signInError?.message || 'Account created successfully.');
           
           set({
@@ -402,6 +475,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const message = err?.message || 'An unexpected error occurred during sign up';
       set({ error: message, isLoading: false });
       return { error: new Error(message), user: null };
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -416,11 +491,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      // Automatically generates exp://... in Expo Go and mylifestack://... in standalone builds
-      const redirectUrl = AuthSession.makeRedirectUri({
-        scheme: 'mylifestack',
-        preferLocalhost: false,
-      });
+      const redirectUrl = getAuthRedirectUri();
       console.log('[Auth] Using Redirect URL:', redirectUrl);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -439,14 +510,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (data?.url) {
         console.log('[Auth] Opening WebBrowser session...');
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-        console.log('[Auth] WebBrowser result:', result);
+        try {
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+          console.log('[Auth] WebBrowser result:', result);
 
-        if (result.type === 'success' && result.url) {
-          const handled = await handleAuthUrl(result.url, set);
-          if (handled) {
-            return { error: null };
+          if (result.type === 'success' && result.url) {
+            const handled = await handleAuthUrl(result.url, set);
+            if (handled) {
+              return { error: null };
+            }
           }
+        } finally {
+          set({ isLoading: false });
         }
       }
 
@@ -457,6 +532,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const message = err?.message || 'Google sign in failed';
       set({ error: message, isLoading: false });
       return { error: new Error(message) };
+    } finally {
+      set({ isLoading: false });
     }
   },
 

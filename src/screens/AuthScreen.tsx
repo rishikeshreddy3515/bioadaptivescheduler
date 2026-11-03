@@ -223,6 +223,16 @@ export const AuthScreen: React.FC = () => {
               <Text style={styles.guestButtonText}>⚡ Continue as Guest (Skip Sign In)</Text>
             </TouchableOpacity>
 
+            {/* Demo Account Option */}
+            <TouchableOpacity
+              style={[styles.demoButton, isLoading && styles.buttonDisabled]}
+              onPress={signInAsGuest}
+              disabled={isLoading}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.demoButtonText}>✨ Continue with Demo Account</Text>
+            </TouchableOpacity>
+
             {/* Toggle Mode */}
             <View style={styles.switchContainer}>
               <Text style={styles.switchPromptText}>
@@ -463,6 +473,21 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 15,
     fontWeight: '700',
+  },
+  demoButton: {
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  demoButtonText: {
+    color: '#7DD3FC',
+    fontSize: 14,
+    fontWeight: '600',
   },
   buttonDisabled: {
     opacity: 0.6,

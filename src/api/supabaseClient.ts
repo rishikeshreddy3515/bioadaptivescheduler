@@ -18,6 +18,7 @@ export const isSupabaseConfigured = (): boolean => {
 export const getAuthRedirectUri = (): string => {
   return AuthSession.makeRedirectUri({
     scheme: 'mylifestack',
+    path: 'auth/callback',
     preferLocalhost: false,
   });
 };
