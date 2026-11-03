@@ -100,3 +100,4 @@ export interface AIReplanLog {
   applied_at?: string;
   created_at?: string;
 }
+

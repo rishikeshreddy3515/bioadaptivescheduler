@@ -1,3 +1,4 @@
+import 'react-native-url-polyfill/auto';
 import * as WebBrowser from 'expo-web-browser';
 
 // Call maybeCompleteAuthSession at the top of the app entry file
