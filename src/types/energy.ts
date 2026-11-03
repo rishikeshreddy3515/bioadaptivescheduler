@@ -3,29 +3,53 @@ export type Chronotype = 'EARLY_BIRD' | 'MODERATE' | 'NIGHT_OWL';
 export interface RoutineModel {
   id: string;
   userId?: string;
-  name: string;
+  user_id?: string;
+  name?: string;
   wakeTime: string;  // "06:30"
+  wake_time?: string;
   sleepTime: string; // "22:30"
-  targetSleepHours: number;
-  morningRoutineMinutes: number;
-  eveningWindDownMinutes: number;
-  chronotype: Chronotype;
-  caffeineCutoffHoursBeforeSleep: number;
+  sleep_time?: string;
+  targetSleepHours?: number;
+  target_sleep_hours?: number;
+  morningRoutineMinutes?: number;
+  eveningWindDownMinutes?: number;
+  chronotype?: Chronotype;
+  caffeineCutoffHoursBeforeSleep?: number;
   caffeineCutoff?: string; // "14:00"
+  caffeine_cutoff?: string;
   windDownTime?: string;   // "21:30"
+  wind_down_time?: string;
+  peakStart?: string;
+  peak_start?: string;
+  peakEnd?: string;
+  peak_end?: string;
+  slumpStart?: string;
+  slump_start?: string;
+  slumpEnd?: string;
+  slump_end?: string;
   secondWindStart?: string; // "16:30"
+  second_wind_start?: string;
   secondWindEnd?: string;   // "18:00"
+  second_wind_end?: string;
+  selected_boosters?: string[];
   naturalWakeTime?: string;
   isDefault?: boolean;
 }
 
 export interface DailyBiometrics {
+  id?: string;
+  userId?: string;
+  user_id?: string;
   date: string;
   sleepHours: number;
-  sleepHoursText: string; // e.g. "7h 12"
+  sleep_hours?: number;
+  sleepHoursText?: string; // e.g. "7h 12"
   hrvMs: number;
+  hrv_ms?: number;
   restingHrBpm: number;
+  resting_hr_bpm?: number;
   readinessScore: number;
+  readiness_score?: number;
 }
 
 export type BoostOptionType =

@@ -26,13 +26,23 @@ export interface RecurrenceRule {
 
 export interface CalendarEvent {
   id: string;
-  calendarId: string;
+  calendarId?: string;
+  calendar_id?: string;
   userId?: string;
+  user_id?: string;
+  externalId?: string;
+  external_id?: string;
+  source?: 'internal' | 'google_calendar' | 'todoist';
   title: string;
   description?: string;
   startTime: string; // ISO 8601 string: 2026-10-31T09:00:00
   endTime: string;   // ISO 8601 string: 2026-10-31T10:30:00
-  isAllDay: boolean;
+  start_time?: string;
+  end_time?: string;
+  isAllDay?: boolean;
+  is_all_day?: boolean;
+  isLocked?: boolean;
+  is_locked?: boolean;
   color?: string;
   location?: string;
   category?: CadenceActivity; // 8 CADENCE activities

@@ -97,8 +97,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         labelsPersistence.load(),
       ]);
 
-      const initialTasks =
-        savedTasks && savedTasks.length > 0 ? savedTasks : generateSeedTasks();
+      const initialTasks = savedTasks || [];
       const initialProjects =
         savedProjects && savedProjects.length > 0 ? savedProjects : DEFAULT_PROJECTS;
       const initialLabels =
@@ -118,10 +117,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
       // Background fetch latest from remote backend
       const remoteTasks = await taskService.getTasks();
-      if (remoteTasks && remoteTasks.length > 0) {
-        set({ tasks: remoteTasks });
-        await tasksPersistence.save(remoteTasks);
-      }
+      set({ tasks: remoteTasks || [] });
+      await tasksPersistence.save(remoteTasks || []);
     } catch (err) {
       console.warn('[useTaskStore] Hydration error:', err);
       set({ isHydrated: true });
@@ -132,11 +129,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set({ isLoading: true });
     try {
       const remoteTasks = await taskService.getTasks();
-      if (remoteTasks && remoteTasks.length > 0) {
-        set({ tasks: remoteTasks, isLoading: false });
-        await tasksPersistence.save(remoteTasks);
-        return remoteTasks;
-      }
+      set({ tasks: remoteTasks || [], isLoading: false });
+      await tasksPersistence.save(remoteTasks || []);
+      return remoteTasks || [];
     } catch (err) {
       console.warn('[useTaskStore] fetchTasks error:', err);
     }
@@ -249,11 +244,20 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // Inject into Calendar Storework worklets
     useCalendarStore.getState().addEvent(newCalendarEvent);
 
-    // Update task with scheduled calendar reference
+    // Update task with scheduled calendar reference and peak status
+    const routine = energyStore.activeRoutineAtom;
+    const peakStart = routine?.peak_start || routine?.peakStart || '08:30';
+    const peakEnd = routine?.peak_end || routine?.peakEnd || '11:00';
+    const isInPeak = startTimeStr >= peakStart && startTimeStr <= peakEnd;
+
     await get().updateTask(taskId, {
       scheduledEventId: newCalendarEvent.id,
       scheduledStartTime: newCalendarEvent.startTime,
       scheduledEndTime: newCalendarEvent.endTime,
+      scheduled_start: newCalendarEvent.startTime,
+      scheduled_end: newCalendarEvent.endTime,
+      isInPeakWindow: isInPeak,
+      is_in_peak_window: isInPeak,
     });
   },
 

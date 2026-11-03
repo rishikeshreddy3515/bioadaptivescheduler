@@ -94,17 +94,45 @@ export const RhythmSetupModal: React.FC<RhythmSetupModalProps> = ({
     const secondWindStart = secondWindParts[0] || '16:30';
     const secondWindEnd = secondWindParts[1] || '18:00';
 
+    const wakeDec = wakeH + wakeM / 60;
+    const peakStartH = chronotype === 'EARLY_BIRD' ? wakeDec + 2.0 : chronotype === 'NIGHT_OWL' ? wakeDec + 6.5 : wakeDec + 3.0;
+    const peakEndH = chronotype === 'EARLY_BIRD' ? wakeDec + 4.5 : chronotype === 'NIGHT_OWL' ? wakeDec + 10.5 : wakeDec + 6.0;
+    const slumpStartH = chronotype === 'EARLY_BIRD' ? wakeDec + 6.5 : chronotype === 'NIGHT_OWL' ? wakeDec + 4.5 : wakeDec + 7.0;
+    const slumpEndH = chronotype === 'EARLY_BIRD' ? wakeDec + 9.0 : chronotype === 'NIGHT_OWL' ? wakeDec + 6.5 : wakeDec + 9.5;
+
+    const toTime = (h: number) => {
+      const norm = (h + 24) % 24;
+      const hh = Math.floor(norm);
+      const mm = Math.round((norm - hh) * 60);
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    };
+
     const newRoutine: RoutineModel = {
       ...activeRoutineAtom,
       name: 'Personalized Circadian Routine',
       wakeTime,
+      wake_time: `${wakeTime}:00`,
       sleepTime,
+      sleep_time: `${sleepTime}:00`,
       windDownTime: windDownStr,
+      wind_down_time: `${windDownStr}:00`,
+      peakStart: toTime(peakStartH),
+      peak_start: `${toTime(peakStartH)}:00`,
+      peakEnd: toTime(peakEndH),
+      peak_end: `${toTime(peakEndH)}:00`,
+      slumpStart: toTime(slumpStartH),
+      slump_start: `${toTime(slumpStartH)}:00`,
+      slumpEnd: toTime(slumpEndH),
+      slump_end: `${toTime(slumpEndH)}:00`,
       targetSleepHours: targetSleep,
       chronotype,
       caffeineCutoff,
+      caffeine_cutoff: `${caffeineCutoff}:00`,
       secondWindStart,
+      second_wind_start: `${secondWindStart}:00`,
       secondWindEnd,
+      second_wind_end: `${secondWindEnd}:00`,
+      selected_boosters: activeRoutineAtom?.selected_boosters || ['CAFFEINE', 'SUNLIGHT', 'POWER_NAP'],
     };
 
     try {
@@ -546,3 +574,4 @@ const styles = StyleSheet.create({
     color: '#0D130C',
   },
 });
+

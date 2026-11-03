@@ -179,35 +179,42 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
                 <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Wake Time</Text>
                 <Text style={[styles.habitValue, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                  {activeRoutineAtom?.wakeTime || '06:30'}
+                  {activeRoutineAtom?.wakeTime || activeRoutineAtom?.wake_time || '06:30'}
                 </Text>
               </View>
 
               <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
                 <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Bedtime</Text>
                 <Text style={[styles.habitValue, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                  {activeRoutineAtom?.sleepTime || '22:30'}
+                  {activeRoutineAtom?.sleepTime || activeRoutineAtom?.sleep_time || '21:30'}
+                </Text>
+              </View>
+
+              <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
+                <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Peak Focus</Text>
+                <Text style={[styles.habitValue, { color: '#38BDF8', fontFamily: FONTS.dotoBold }]}>
+                  {(activeRoutineAtom?.peakStart || activeRoutineAtom?.peak_start || '08:30').substring(0, 5)} – {(activeRoutineAtom?.peakEnd || activeRoutineAtom?.peak_end || '11:00').substring(0, 5)}
                 </Text>
               </View>
 
               <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
                 <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Afternoon Slump</Text>
-                <Text style={[styles.habitValue, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                  13:00 – 15:00
+                <Text style={[styles.habitValue, { color: '#F59E0B', fontFamily: FONTS.dotoBold }]}>
+                  {(activeRoutineAtom?.slumpStart || activeRoutineAtom?.slump_start || '13:00').substring(0, 5)} – {(activeRoutineAtom?.slumpEnd || activeRoutineAtom?.slump_end || '15:30').substring(0, 5)}
                 </Text>
               </View>
 
               <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
                 <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Second Wind</Text>
                 <Text style={[styles.habitValue, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                  {activeRoutineAtom?.secondWindStart || '16:30'} – {activeRoutineAtom?.secondWindEnd || '18:00'}
+                  {(activeRoutineAtom?.secondWindStart || activeRoutineAtom?.second_wind_start || '16:30').substring(0, 5)} – {(activeRoutineAtom?.secondWindEnd || activeRoutineAtom?.second_wind_end || '18:00').substring(0, 5)}
                 </Text>
               </View>
 
               <View style={[styles.habitItem, { backgroundColor: theme.secondarySurface }]}>
                 <Text style={[styles.habitLabel, { color: theme.secondaryText }]}>Caffeine Cutoff</Text>
-                <Text style={[styles.habitValue, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                  {activeRoutineAtom?.caffeineCutoff || '14:00'}
+                <Text style={[styles.habitValue, { color: '#EF4444', fontFamily: FONTS.dotoBold }]}>
+                  {(activeRoutineAtom?.caffeineCutoff || activeRoutineAtom?.caffeine_cutoff || '14:00').substring(0, 5)}
                 </Text>
               </View>
             </View>
@@ -456,3 +463,4 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
   },
 });
+

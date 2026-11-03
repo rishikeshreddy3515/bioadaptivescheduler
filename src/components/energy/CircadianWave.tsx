@@ -265,28 +265,34 @@ export const CircadianWave: React.FC<CircadianWaveProps> = ({
           strokeWidth={1.8}
         />
 
-        {/* Circular Node on Curve */}
+        {/* Circular Node on Curve (Halo, Outer Ring, Hollow Center matching LifeStack Image 2) */}
+        <Circle
+          cx={nowPoint.x}
+          cy={nowPoint.y}
+          r={11}
+          color="rgba(197, 240, 102, 0.22)"
+        />
         <Circle
           cx={nowPoint.x}
           cy={nowPoint.y}
           r={6.5}
-          color={theme.primaryOlive}
+          color="#C5F066"
         />
         <Circle
           cx={nowPoint.x}
           cy={nowPoint.y}
-          r={3}
+          r={3.2}
           color={isDark ? '#161C14' : '#FCFBF7'}
         />
       </Canvas>
 
-      {/* Floating 'Now' Badge with Live Device Time */}
+      {/* Floating 'Now' Badge with Live Device Present Time */}
       <View
         style={[
           styles.nowBadge,
           {
-            left: Math.max(pad, Math.min(width - pad - 84, nowPoint.x - 42)),
-            backgroundColor: theme.primaryOlive,
+            left: Math.max(pad, Math.min(width - pad - 86, nowPoint.x - 43)),
+            backgroundColor: '#C5F066',
           },
         ]}
       >
@@ -318,15 +324,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     height: 22,
     borderRadius: 11,
-    minWidth: 80,
+    minWidth: 84,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 10,
   },
   nowText: {
     fontSize: 10.5,

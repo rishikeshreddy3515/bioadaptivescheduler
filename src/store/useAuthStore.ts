@@ -134,9 +134,14 @@ export const ensureUserSeeded = async (user: User | null): Promise<void> => {
           user_id: user.id,
           wake_time: '06:30:00',
           wind_down_time: '21:30:00',
+          peak_start: '08:30:00',
+          peak_end: '11:00:00',
+          slump_start: '13:00:00',
+          slump_end: '15:30:00',
           caffeine_cutoff: '14:00:00',
           second_wind_start: '16:30:00',
           second_wind_end: '18:00:00',
+          selected_boosters: ['CAFFEINE', 'SUNLIGHT', 'POWER_NAP'],
         });
       }
     } catch (routineErr: any) {
@@ -584,6 +589,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await storage.remove('isGuest');
+      await storage.remove(STORAGE_KEYS.hasCompletedOnboarding);
       if (isSupabaseConfigured()) {
         await supabase.auth.signOut();
       }

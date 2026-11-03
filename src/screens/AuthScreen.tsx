@@ -13,9 +13,15 @@ import {
   StatusBar,
 } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
-import { isSupabaseConfigured } from '../api/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../api/supabaseClient';
+import { storage, STORAGE_KEYS } from '../utils/storage';
 
-export const AuthScreen: React.FC = () => {
+interface AuthScreenProps {
+  onAuthSuccess?: (hasCompletedOnboarding: boolean) => void;
+  onClose?: () => void;
+}
+
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onClose }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,6 +40,39 @@ export const AuthScreen: React.FC = () => {
   } = useAuthStore();
 
   const isSignUp = authMode === 'signup';
+
+  const verifyOnboardingAndProceed = async () => {
+    const activeUser = useAuthStore.getState().user;
+    let hasCompleted = false;
+
+    if (activeUser?.id && isSupabaseConfigured() && !useAuthStore.getState().profile?.isGuest) {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('has_completed_onboarding')
+          .eq('id', activeUser.id)
+          .maybeSingle();
+
+        if (data && !error) {
+          hasCompleted = Boolean(data.has_completed_onboarding);
+        }
+      } catch (err) {
+        console.warn('[AuthScreen] Error checking profiles.has_completed_onboarding:', err);
+      }
+    } else {
+      const localCompleted = await storage.get<boolean>(STORAGE_KEYS.hasCompletedOnboarding);
+      hasCompleted = Boolean(localCompleted);
+    }
+
+    await storage.set(STORAGE_KEYS.hasCompletedOnboarding, hasCompleted);
+    useAuthStore.setState((prev) => ({
+      profile: prev.profile
+        ? { ...prev.profile, has_completed_onboarding: hasCompleted }
+        : null,
+    }));
+
+    onAuthSuccess?.(hasCompleted);
+  };
 
   const handleAuthAction = async () => {
     clearError();
@@ -60,12 +99,26 @@ export const AuthScreen: React.FC = () => {
     } else {
       await signInWithPassword(trimmedEmail, password);
     }
+
+    if (useAuthStore.getState().status === 'authenticated') {
+      await verifyOnboardingAndProceed();
+    }
   };
 
   const handleGoogleSignIn = async () => {
     clearError();
     setNoticeMessage(null);
     await signInWithGoogle();
+    if (useAuthStore.getState().status === 'authenticated') {
+      await verifyOnboardingAndProceed();
+    }
+  };
+
+  const handleDemoSignIn = async () => {
+    clearError();
+    setNoticeMessage(null);
+    await signInAsGuest();
+    await verifyOnboardingAndProceed();
   };
 
   const switchMode = (mode: 'signin' | 'signup') => {
@@ -97,10 +150,10 @@ export const AuthScreen: React.FC = () => {
 
               <TouchableOpacity
                 style={styles.closeBackBtn}
-                onPress={signInAsGuest}
+                onPress={onClose || handleDemoSignIn}
                 activeOpacity={0.7}
               >
-                <Text style={styles.closeBackText}>Skip ✕</Text>
+                <Text style={styles.closeBackText}>✕ Close</Text>
               </TouchableOpacity>
             </View>
 
@@ -175,6 +228,26 @@ export const AuthScreen: React.FC = () => {
 
           {/* Form Card */}
           <View style={styles.formContainer}>
+            {/* 1. Leading One-Tap Option: Continue with Google */}
+            <TouchableOpacity
+              style={[styles.googleButton, isLoading && styles.buttonDisabled]}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              <View style={styles.googleIconContainer}>
+                <Text style={styles.googleIconText}>G</Text>
+              </View>
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR WITH EMAIL</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
             {/* Email Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email Address</Text>
@@ -241,42 +314,19 @@ export const AuthScreen: React.FC = () => {
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+              <Text style={styles.dividerText}>OR EXPLORE OFFLINE</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Sorted Options: Google OAuth */}
-            <TouchableOpacity
-              style={[styles.googleButton, isLoading && styles.buttonDisabled]}
-              onPress={handleGoogleSignIn}
-              disabled={isLoading}
-              activeOpacity={0.85}
-            >
-              <View style={styles.googleIconContainer}>
-                <Text style={styles.googleIconText}>G</Text>
-              </View>
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            {/* Sorted Options: Demo Account Button (One-tap test account) */}
+            {/* 3. Sorted Option: One-tap Demo Account */}
             <TouchableOpacity
               style={[styles.demoButton, isLoading && styles.buttonDisabled]}
-              onPress={signInAsGuest}
+              onPress={handleDemoSignIn}
               disabled={isLoading}
               activeOpacity={0.85}
             >
               <Text style={styles.demoButtonIcon}>✨</Text>
               <Text style={styles.demoButtonText}>Continue with Demo Account</Text>
-            </TouchableOpacity>
-
-            {/* Sorted Options: Guest Mode */}
-            <TouchableOpacity
-              style={styles.guestLinkBtn}
-              onPress={signInAsGuest}
-              disabled={isLoading}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.guestLinkText}>⚡ Skip login and use offline guest mode</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

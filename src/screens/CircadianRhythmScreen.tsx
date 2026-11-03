@@ -41,6 +41,7 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
     currentEnergyScoreSelector,
     circadianPhaseSelector,
     activeRoutineAtom,
+    dailyBiometrics,
   } = useEnergyStore();
 
   const [showRhythmSetup, setShowRhythmSetup] = useState(false);
@@ -52,22 +53,27 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
   });
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const updateTime = () => {
       const d = new Date();
       setNowHour(d.getHours() + d.getMinutes() / 60);
-    }, 15000);
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 5000); // refresh every 5s for live reactivity
     return () => clearInterval(timer);
   }, []);
 
   const scoreInfo = currentEnergyScoreSelector();
   const phases = circadianPhaseSelector();
+  const displayScore = dailyBiometrics?.readinessScore || scoreInfo.score || 86;
 
-  const wakeTime = activeRoutineAtom?.wakeTime || '06:30';
-  const windDownTime = activeRoutineAtom?.windDownTime || '21:30';
-  const caffeineTime = activeRoutineAtom?.caffeineCutoff || '14:00';
-  const secondWindRange = `${activeRoutineAtom?.secondWindStart || '16:30'}–${activeRoutineAtom?.secondWindEnd || '18:00'}`;
-  const peakRange = `${phases?.morningPeakFocus?.start || '08:30'}–${phases?.morningPeakFocus?.end || '11:00'}`;
-  const slumpRange = `${phases?.postprandialDip?.start || '13:00'}–${phases?.postprandialDip?.end || '15:30'}`;
+  const wakeTime = activeRoutineAtom?.wakeTime || activeRoutineAtom?.wake_time?.slice(0, 5) || '06:30';
+  const windDownTime = activeRoutineAtom?.windDownTime || activeRoutineAtom?.wind_down_time?.slice(0, 5) || '21:30';
+  const caffeineTime = activeRoutineAtom?.caffeineCutoff || activeRoutineAtom?.caffeine_cutoff?.slice(0, 5) || '14:00';
+  const secondWindStart = activeRoutineAtom?.secondWindStart || activeRoutineAtom?.second_wind_start?.slice(0, 5) || '16:30';
+  const secondWindEnd = activeRoutineAtom?.secondWindEnd || activeRoutineAtom?.second_wind_end?.slice(0, 5) || '18:00';
+  const secondWindRange = `${secondWindStart}–${secondWindEnd}`;
+  const peakRange = `${phases?.morningPeakFocus?.start || '09:00'}–${phases?.morningPeakFocus?.end || '12:00'}`;
+  const slumpRange = `${phases?.postprandialDip?.start || '13:00'}–${phases?.postprandialDip?.end || '15:00'}`;
 
   // Dynamic phase title & description based on the user's live current hour
   const getPhaseStatus = () => {
@@ -225,7 +231,7 @@ export const CircadianRhythmScreen: React.FC<CircadianRhythmScreenProps> = ({
               </TouchableOpacity>
 
               <Text style={[styles.heroScore, { color: theme.text, fontFamily: FONTS.dotoBold }]}>
-                {scoreInfo.score}
+                {displayScore}
               </Text>
             </View>
           </View>

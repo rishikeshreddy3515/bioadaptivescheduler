@@ -142,7 +142,7 @@ export const dayViewSelector = (
 
   // Filter by visible calendars and non-all-day
   const filtered = expanded.filter(
-    (ev) => !ev.isAllDay && visibleCalendarIds.includes(ev.calendarId)
+    (ev) => !ev.isAllDay && Boolean(ev.calendarId && visibleCalendarIds.includes(ev.calendarId))
   );
 
   // Sort chronologically
@@ -298,7 +298,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     return allDayEvents.filter(
       (ev) =>
         ev.startTime.startsWith(selectedDateAtom) &&
-        visibleCalendarIdsAtom.includes(ev.calendarId)
+        Boolean(ev.calendarId && visibleCalendarIdsAtom.includes(ev.calendarId))
     );
   },
 }));

@@ -453,25 +453,27 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             </View>
           </View>
 
-          {/* Today's Rhythm Card - Live Hydrated */}
-          <View
+          {/* Today's Rhythm Card - Live Hydrated (Tap to open full Circadian Wave) */}
+          <TouchableOpacity
             style={[
               styles.rhythmCard,
               { backgroundColor: theme.primarySurface, borderColor: theme.border },
             ]}
+            onPress={() => onNavigateTab?.('Energy')}
+            activeOpacity={0.88}
           >
             <View style={styles.rhythmHeader}>
               <Text style={[styles.rhythmTitle, { color: theme.text, fontFamily: FONTS.urbanistSemiBold }]}>
                 {deepWorkLeftText}
               </Text>
               <Text style={[styles.rhythmTag, { color: theme.secondaryText, fontFamily: FONTS.urbanistRegular }]}>
-                Today's rhythm
+                Today's rhythm →
               </Text>
             </View>
 
             {/* Skia Horizontal Tick Ruler with Live Now marker */}
             <RhythmRuler currentHour={currentHour} />
-          </View>
+          </TouchableOpacity>
 
           {/* Reset Onboarding Option for Testing / Verification */}
           {onResetOnboarding && (

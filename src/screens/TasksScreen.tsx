@@ -14,7 +14,9 @@ import { FONTS } from '../theme/typography';
 import { CadenceActivity, ACTIVITY_COLORS } from '../theme/colors';
 import { DotMatrixBackground } from '../components/common/DotMatrixBackground';
 import { TaskCoverFlow3D, CoverFlowTaskItem } from '../components/tasks/TaskCoverFlow3D';
+import { TaskDetailModal } from '../components/tasks/TaskDetailModal';
 import { useTaskStore } from '../store/useTaskStore';
+import { Task } from '../types/task';
 import { CadenceTabBar, NavTab } from '../navigation/CadenceTabBar';
 
 interface TasksScreenProps {
@@ -32,6 +34,7 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
   const { tasks, toggleTaskCompletion, fetchTasks } = useTaskStore();
 
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   useEffect(() => {
     fetchTasks();
@@ -347,8 +350,12 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
                       )}
                     </TouchableOpacity>
 
-                    {/* Task Title & Details */}
-                    <View style={styles.taskMiddle}>
+                    {/* Task Title & Details (Tap to View in 3D) */}
+                    <TouchableOpacity
+                      style={styles.taskMiddle}
+                      onPress={() => setViewingTask(t)}
+                      activeOpacity={0.75}
+                    >
                       <Text
                         style={[
                           styles.taskTitle,
@@ -368,7 +375,7 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
                           {spec.label} · <Text style={{ fontFamily: FONTS.dotoBold }}>{t.estimatedDurationMinutes}</Text> min
                         </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Right Scheduled Time */}
                     {t.scheduledStartTime && (
@@ -388,6 +395,13 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
           activeTab="Tasks"
           onSelectTab={onNavigateTab || (() => {})}
           onLongPressAi={onLongPressAi}
+        />
+
+        {/* 3D Task Detail Inspection Modal */}
+        <TaskDetailModal
+          task={viewingTask}
+          visible={Boolean(viewingTask)}
+          onClose={() => setViewingTask(null)}
         />
       </SafeAreaView>
     </View>

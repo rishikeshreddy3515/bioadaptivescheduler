@@ -13,25 +13,43 @@ export type TaskStatus = 'todo' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface Task {
   id: string;
+  userId?: string;
+  user_id?: string;
   title: string;
   description?: string;
   projectId?: string;
+  project_id?: string;
   labelIds: string[];
+  label_ids?: string[];
   priority: TaskPriority;
   requiredEnergy: TaskEnergyDemand;
+  required_energy?: TaskEnergyDemand;
   estimatedDurationMinutes: number; // default 30
   durationMinutes?: number;
+  duration_minutes?: number;
   taskCategory?: CadenceActivity;
   category?: CadenceActivity;
+  task_category?: CadenceActivity;
   dueDate?: string; // YYYY-MM-DD
+  due_date?: string;
   isCompleted: boolean;
+  is_completed?: boolean;
   completedAt?: string;
+  completed_at?: string;
   scheduledEventId?: string; // Links to calendar_events table
+  scheduled_event_id?: string;
   scheduledStartTime?: string; // ISO string when scheduled to timeline
   scheduledEndTime?: string; // ISO string
+  scheduled_start?: string;
+  scheduled_end?: string;
+  parentTaskId?: string;
+  parent_task_id?: string;
   isInPeakWindow?: boolean;
+  is_in_peak_window?: boolean;
   createdAt: string;
   updatedAt: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface TaskProject {

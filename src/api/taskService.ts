@@ -160,76 +160,128 @@ export const generateSeedTasks = (): Task[] => {
 export const taskService = {
   /**
    * GET /api/v1/tasks/
+   * Fetches active tasks for the current user (filters by is_completed = false)
    */
   async getTasks(): Promise<Task[]> {
     if (!isSupabaseConfigured()) {
       const persisted = await storage.get<Task[]>(STORAGE_KEYS.tasksAtom);
-      return persisted && persisted.length > 0 ? persisted : generateSeedTasks();
+      return persisted || [];
     }
 
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const user = (await supabase.auth.getUser()).data?.user;
+      let query = supabase.from('tasks').select('*');
+      if (user?.id) {
+        query = query.eq('user_id', user.id);
+      }
+      // Ensure fetchTasks() filters by is_completed = false for active backlog and scheduled tasks
+      query = query.eq('is_completed', false).order('created_at', { ascending: false });
+
+      const { data, error } = await query;
 
       if (error || !data || data.length === 0) {
         const persisted = await storage.get<Task[]>(STORAGE_KEYS.tasksAtom);
-        return persisted && persisted.length > 0 ? persisted : generateSeedTasks();
+        return persisted || [];
       }
 
       return data.map((t: any) => ({
         id: t.id,
+        userId: t.user_id,
+        user_id: t.user_id,
         title: t.title,
         description: t.description || undefined,
         projectId: t.project_id || undefined,
         labelIds: t.label_ids || [],
-        priority: t.priority || 'medium',
+        priority: (t.priority?.toLowerCase() || 'medium') as any,
         requiredEnergy: t.required_energy || 'medium',
         estimatedDurationMinutes: t.duration_minutes || t.estimated_duration_minutes || 30,
         durationMinutes: t.duration_minutes || t.estimated_duration_minutes || 30,
+        duration_minutes: t.duration_minutes || t.estimated_duration_minutes || 30,
         taskCategory: t.task_category || 'deep_work',
+        task_category: t.task_category || 'deep_work',
         category: t.task_category || 'deep_work',
         isInPeakWindow: t.is_in_peak_window !== undefined ? Boolean(t.is_in_peak_window) : true,
+        is_in_peak_window: t.is_in_peak_window !== undefined ? Boolean(t.is_in_peak_window) : true,
         dueDate: t.due_date || undefined,
         isCompleted: Boolean(t.is_completed),
+        is_completed: Boolean(t.is_completed),
         completedAt: t.completed_at || undefined,
         scheduledEventId: t.scheduled_event_id || undefined,
-        scheduledStartTime: t.scheduled_start_time || undefined,
-        scheduledEndTime: t.scheduled_end_time || undefined,
-        createdAt: t.created_at,
-        updatedAt: t.updated_at,
+        scheduledStartTime: t.scheduled_start || t.scheduled_start_time || undefined,
+        scheduledEndTime: t.scheduled_end || t.scheduled_end_time || undefined,
+        scheduled_start: t.scheduled_start || t.scheduled_start_time || undefined,
+        scheduled_end: t.scheduled_end || t.scheduled_end_time || undefined,
+        createdAt: t.created_at || new Date().toISOString(),
+        updatedAt: t.updated_at || new Date().toISOString(),
       }));
     } catch {
       const persisted = await storage.get<Task[]>(STORAGE_KEYS.tasksAtom);
-      return persisted && persisted.length > 0 ? persisted : generateSeedTasks();
+      return persisted || [];
     }
   },
 
   /**
    * POST /api/v1/tasks/ (Create Task)
+   * Populates user_id from supabase.auth.getUser() and defaults is_in_peak_window
    */
   async createTask(task: Partial<Task>): Promise<Task> {
-    const dur = task.durationMinutes || task.estimatedDurationMinutes || 30;
-    const cat = task.taskCategory || task.category || 'deep_work';
+    const dur = task.durationMinutes || task.duration_minutes || task.estimatedDurationMinutes || 30;
+    const cat = task.taskCategory || task.task_category || task.category || 'deep_work';
+
+    let user_id = task.userId || task.user_id;
+    if (!user_id && isSupabaseConfigured()) {
+      try {
+        const user = (await supabase.auth.getUser()).data?.user;
+        user_id = user?.id;
+      } catch {}
+    }
+    const finalUserId = user_id || 'guest-user-12345';
+
+    // Calculate if slot is in user's peak window
+    let inPeak = task.isInPeakWindow ?? task.is_in_peak_window;
+    if (inPeak === undefined) {
+      try {
+        const { useEnergyStore } = require('../store/useEnergyStore');
+        const routine = useEnergyStore.getState().activeRoutineAtom;
+        const peakStart = routine?.peak_start || routine?.peakStart || '08:30';
+        const peakEnd = routine?.peak_end || routine?.peakEnd || '11:00';
+        const startCandidate = task.scheduledStartTime || task.scheduled_start;
+        if (startCandidate && startCandidate.includes('T')) {
+          const timePart = startCandidate.split('T')[1].substring(0, 5);
+          inPeak = timePart >= peakStart && timePart <= peakEnd;
+        } else {
+          inPeak = cat === 'deep_work' || cat === 'creative_work';
+        }
+      } catch {
+        inPeak = cat === 'deep_work' || cat === 'creative_work';
+      }
+    }
 
     const newTask: Task = {
       id: task.id || `task-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      userId: finalUserId,
+      user_id: finalUserId,
       title: task.title || 'Untitled Task',
       description: task.description,
-      projectId: task.projectId || 'proj-work',
-      labelIds: task.labelIds || [],
+      projectId: task.projectId || task.project_id || 'proj-work',
+      labelIds: task.labelIds || task.label_ids || [],
       priority: task.priority || 'medium',
-      requiredEnergy: task.requiredEnergy || 'medium',
+      requiredEnergy: task.requiredEnergy || (cat === 'deep_work' ? 'high' : 'medium'),
       estimatedDurationMinutes: dur,
       durationMinutes: dur,
+      duration_minutes: dur,
       taskCategory: cat,
+      task_category: cat,
       category: cat,
-      isInPeakWindow: task.isInPeakWindow !== undefined ? task.isInPeakWindow : true,
-      dueDate: task.dueDate,
-      scheduledStartTime: task.scheduledStartTime,
-      scheduledEndTime: task.scheduledEndTime,
+      isInPeakWindow: inPeak,
+      is_in_peak_window: inPeak,
+      dueDate: task.dueDate || task.due_date,
+      scheduledStartTime: task.scheduledStartTime || task.scheduled_start,
+      scheduledEndTime: task.scheduledEndTime || task.scheduled_end,
+      scheduled_start: task.scheduledStartTime || task.scheduled_start,
+      scheduled_end: task.scheduledEndTime || task.scheduled_end,
       isCompleted: false,
+      is_completed: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -240,30 +292,31 @@ export const taskService = {
     }
 
     try {
+      const formattedPriority =
+        newTask.priority.charAt(0).toUpperCase() + newTask.priority.slice(1).toLowerCase();
+
       const { error } = await supabase.from('tasks').insert([
         {
           id: newTask.id,
+          user_id: finalUserId,
           title: newTask.title,
           description: newTask.description,
-          project_id: newTask.projectId,
-          label_ids: newTask.labelIds,
-          priority: newTask.priority,
-          required_energy: newTask.requiredEnergy,
-          estimated_duration_minutes: newTask.estimatedDurationMinutes,
           duration_minutes: newTask.durationMinutes,
+          priority: formattedPriority,
           task_category: newTask.taskCategory,
-          is_in_peak_window: newTask.isInPeakWindow,
-          due_date: newTask.dueDate,
-          scheduled_start_time: newTask.scheduledStartTime,
-          scheduled_end_time: newTask.scheduledEndTime,
+          is_in_peak_window: inPeak,
           is_completed: false,
+          scheduled_start: newTask.scheduledStartTime,
+          scheduled_end: newTask.scheduledEndTime,
         },
       ]);
 
       if (error) {
+        console.warn('[taskService] insert error, queuing offline:', error);
         await this.queueOfflineMutation('create', newTask);
       }
-    } catch {
+    } catch (e) {
+      console.warn('[taskService] insert exception, queuing offline:', e);
       await this.queueOfflineMutation('create', newTask);
     }
 
@@ -294,13 +347,26 @@ export const taskService = {
       if (updates.requiredEnergy !== undefined) dbPayload.required_energy = updates.requiredEnergy;
       if (updates.estimatedDurationMinutes !== undefined) dbPayload.estimated_duration_minutes = updates.estimatedDurationMinutes;
       if (updates.dueDate !== undefined) dbPayload.due_date = updates.dueDate;
-      if (updates.isCompleted !== undefined) {
-        dbPayload.is_completed = updates.isCompleted;
-        dbPayload.completed_at = updates.isCompleted ? new Date().toISOString() : null;
+      if (updates.isCompleted !== undefined || updates.is_completed !== undefined) {
+        const comp = updates.isCompleted ?? updates.is_completed;
+        dbPayload.is_completed = comp;
+        dbPayload.completed_at = comp ? new Date().toISOString() : null;
       }
-      if (updates.scheduledEventId !== undefined) dbPayload.scheduled_event_id = updates.scheduledEventId;
-      if (updates.scheduledStartTime !== undefined) dbPayload.scheduled_start_time = updates.scheduledStartTime;
-      if (updates.scheduledEndTime !== undefined) dbPayload.scheduled_end_time = updates.scheduledEndTime;
+      if (updates.scheduledStartTime !== undefined || updates.scheduled_start !== undefined) {
+        dbPayload.scheduled_start = updates.scheduledStartTime || updates.scheduled_start;
+      }
+      if (updates.scheduledEndTime !== undefined || updates.scheduled_end !== undefined) {
+        dbPayload.scheduled_end = updates.scheduledEndTime || updates.scheduled_end;
+      }
+      if (updates.is_in_peak_window !== undefined || updates.isInPeakWindow !== undefined) {
+        dbPayload.is_in_peak_window = updates.is_in_peak_window ?? updates.isInPeakWindow;
+      }
+      if (updates.taskCategory !== undefined || updates.task_category !== undefined) {
+        dbPayload.task_category = updates.taskCategory || updates.task_category;
+      }
+      if (updates.durationMinutes !== undefined || updates.duration_minutes !== undefined || updates.estimatedDurationMinutes !== undefined) {
+        dbPayload.duration_minutes = updates.durationMinutes || updates.duration_minutes || updates.estimatedDurationMinutes;
+      }
 
       const { error } = await supabase.from('tasks').update(dbPayload).eq('id', taskId);
       if (error) {

@@ -37,6 +37,19 @@ export const EnergyStatusScreen: React.FC<EnergyStatusScreenProps> = ({
   const scoreInfo = currentEnergyScoreSelector();
   const phases = circadianPhaseSelector();
 
+  const [liveTimeString, setLiveTimeString] = React.useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setLiveTimeString(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   const sleepHours = dailyBiometrics?.sleepHours || 7.2;
   const sleepH = Math.floor(sleepHours);
   const sleepM = Math.round((sleepHours - sleepH) * 60);
@@ -85,7 +98,7 @@ export const EnergyStatusScreen: React.FC<EnergyStatusScreenProps> = ({
               Energy status
             </Text>
             <Text style={[styles.nowText, { color: theme.secondaryText, fontFamily: FONTS.urbanistMedium }]}>
-              Now <Text style={{ fontFamily: FONTS.dotoBold, color: theme.text }}>10:20</Text>
+              Now <Text style={{ fontFamily: FONTS.dotoBold, color: theme.text }}>{liveTimeString}</Text>
             </Text>
           </View>
 

@@ -29,6 +29,7 @@ import { STORAGE_KEYS, storage } from './src/utils/storage';
 import { NavTab } from './src/navigation/CadenceTabBar';
 
 // Screens
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { ConnectScreen } from './src/screens/ConnectScreen';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
@@ -38,6 +39,7 @@ import { EnergyStatusScreen } from './src/screens/EnergyStatusScreen';
 import { CircadianRhythmScreen } from './src/screens/CircadianRhythmScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { supabase, isSupabaseConfigured } from './src/api/supabaseClient';
 
 // AI Trigger Modal
 import { AskCadenceModal } from './src/components/ai/AskCadenceModal';
@@ -75,10 +77,29 @@ export default function App() {
     hydrateEnergy();
     hydrateTasks();
 
-    // Check onboarding completion
+    // Check onboarding completion from storage & Supabase
     storage.get<boolean>(STORAGE_KEYS.hasCompletedOnboarding).then((completed) => {
       setHasCompletedOnboarding(!!completed);
     });
+
+    if (isSupabaseConfigured()) {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) {
+          supabase
+            .from('profiles')
+            .select('has_completed_onboarding')
+            .eq('id', data.user.id)
+            .maybeSingle()
+            .then(({ data: profileData }) => {
+              if (profileData && profileData.has_completed_onboarding !== undefined) {
+                const isDone = Boolean(profileData.has_completed_onboarding);
+                setHasCompletedOnboarding(isDone);
+                storage.set(STORAGE_KEYS.hasCompletedOnboarding, isDone);
+              }
+            });
+        }
+      });
+    }
 
     let unsubscribe: (() => void) | undefined;
     initializeAuth().then((cleanup) => {
@@ -113,6 +134,9 @@ export default function App() {
   const handleFinishOnboarding = () => {
     storage.set(STORAGE_KEYS.hasCompletedOnboarding, true);
     setHasCompletedOnboarding(true);
+    useEnergyStore.getState().fetchRoutine();
+    useEnergyStore.getState().fetchDailyBiometrics();
+    useTaskStore.getState().fetchTasks();
   };
 
   const handleResetOnboarding = () => {
@@ -146,7 +170,7 @@ export default function App() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
 
         {!hasCompletedOnboarding ? (
-          <ConnectScreen onComplete={handleFinishOnboarding} />
+          <OnboardingScreen onComplete={handleFinishOnboarding} />
         ) : (
           <View style={styles.appContainer}>
             {/* Screen 2: Today Dashboard */}
@@ -170,19 +194,10 @@ export default function App() {
               />
             )}
 
-            {/* Screen 5: Energy Status */}
-            {currentTab === 'Energy' && !showCircadianDetail && (
-              <EnergyStatusScreen
-                onOpenCircadianRhythm={() => setShowCircadianDetail(true)}
-                onNavigateTab={handleTabChange}
-                onLongPressAi={() => setShowAiModal(true)}
-              />
-            )}
-
-            {/* Screen 7: Circadian Rhythm Detail */}
-            {currentTab === 'Energy' && showCircadianDetail && (
+            {/* Screen 7: Circadian Rhythm Detail (Primary Energy Screen matching LifeStack Image 2) */}
+            {currentTab === 'Energy' && (
               <CircadianRhythmScreen
-                onBack={() => setShowCircadianDetail(false)}
+                onBack={() => handleTabChange('Today')}
                 onNavigateTab={handleTabChange}
                 onLongPressAi={() => setShowAiModal(true)}
               />
@@ -240,7 +255,19 @@ export default function App() {
             {/* Auth Modal Overlay */}
             {showAuthModal && (
               <View style={StyleSheet.absoluteFill}>
-                <AuthScreen />
+                <AuthScreen
+                  onAuthSuccess={(completed) => {
+                    setShowAuthModal(false);
+                    setHasCompletedOnboarding(completed);
+                    useEnergyStore.getState().fetchRoutine();
+                    useEnergyStore.getState().fetchDailyBiometrics();
+                    useTaskStore.getState().fetchTasks();
+                    if (completed) {
+                      setCurrentTab('Today');
+                    }
+                  }}
+                  onClose={() => setShowAuthModal(false)}
+                />
               </View>
             )}
           </View>
